@@ -9,6 +9,7 @@ from urllib.parse import parse_qs,urlsplit
 from unittest.mock import patch
 from playwright.sync_api import sync_playwright,expect
 from aoa.server import AppServer
+from aoa.version import VERSION
 from aoa.model import validate_bar,time_us,iso
 from aoa.store import Store
 from aoa.study import StudyStore
@@ -46,7 +47,7 @@ def main():
                 try:
                     page.goto('http://127.0.0.1:'+str(server.server_address[1]),wait_until='networkidle')
                     wait_state(page,'window.AOAViewer?.snapshot().study?.event!=null && !window.AOAViewer.snapshot().loading')
-                    expect(page.locator('#version')).to_have_text('v0.3.0');expect(page.locator('#minQty')).to_have_value('0')
+                    expect(page.locator('#version')).to_have_text('v'+VERSION);expect(page.locator('#minQty')).to_have_value('0')
                     assert page.evaluate('() => window.AOAViewer.snapshot().markerCount')==3
                     first=page.evaluate('() => window.AOAViewer.snapshot().anchor');assert first==entry
                     assert page.evaluate('() => window.AOAViewer.snapshot().start')<=entry
