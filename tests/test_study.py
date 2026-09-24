@@ -54,10 +54,14 @@ class ExplanationTests(unittest.TestCase):
         self.assertFalse(r['hypotheses'])
     def test_add_uses_first_price_not_group_future_average(self):
         e=event(before=17000,after=34000,px=99);e['last_us']+=3600*1_000_000;e['avg_price']=9999
-        r=explain_event(e,[],closed_context(rows(),e['first_us']),T+60)
+        context=closed_context(rows(),e['first_us'])
+        r=explain_event(e,[],context,T+60)
         self.assertEqual(r['action'],'ADD');self.assertAlmostEqual(r['reference_price_change_pct'],-1)
         self.assertFalse(r['quantity_disclosed'])
-        self.assertNotIn('9999',json.dumps(r,ensure_ascii=False))
+        # Compare structured outputs, not a substring that can occur in float decimals.
+        poison=copy.deepcopy(e);poison['avg_price']=12345678;poison['qty']=987654321;poison['position_after']=76543210
+        self.assertEqual(r,explain_event(poison,[],context,T+60))
+        self.assertNotIn('avg_price',r)
     def test_direction_and_profit_not_inferred_from_exit_alone(self):
         e=event('Exit',before=17000,after=10000,px=99,qty=7000)
         r=explain_event(e,[],closed_context(rows(),e['first_us']))
