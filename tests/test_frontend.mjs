@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {bucket,buildMarkers,completeAt,sideOf,relativeVolume,parseDateInput,localDateInput,displayAction} from '../web/core.mjs';
+const t=Date.parse('2021-06-04T12:30:00Z')/1000;
+const event=(extra={})=>({id:'e',time:t+133,first_us:(t+133)*1e6,end_time:t+200,last_observed:true,qty:5000000,direction:'Short',role:'Entry',action:'ADD',...extra});
+const bar={time:t,open:100,high:105,low:98,close:99,volume:10};
+test('seconds map to containing 5m candle',()=>assert.equal(bucket(t+133,'5m'),t));
+test('short entry above, short exit below',()=>{assert.equal(sideOf(event()),'aboveBar');assert.equal(sideOf(event({role:'Exit'})),'belowBar');});
+test('long entry below, long exit above',()=>{assert.equal(sideOf(event({direction:'Long'})),'belowBar');assert.equal(sideOf(event({direction:'Long',role:'Exit'})),'aboveBar');});
+test('same candle actions group, no quantity loss',()=>{const r=buildMarkers([event(),event({id:'e2'})],[bar],'5m');assert.equal(r.markers.length,1);assert.equal(r.groups[0].qty,10000000);assert.match(r.markers[0].text,/2건/);});
+test('missing candle does not snap to neighbour',()=>{const r=buildMarkers([event()],[{...bar,time:t+300}],'5m');assert.equal(r.markers.length,0);assert.equal(r.missing,1);});
+test('bar boundary maps exactly',()=>{assert.equal(bucket(t+300,'5m'),t+300);});
+test('higher timeframe partial candle is not leaked in replay',()=>{assert.equal(completeAt([bar],'5m',t+299).length,0);assert.equal(completeAt([bar],'5m',t+300).length,1);});
+test('future orders and group final quantities hidden in replay',()=>{const r=buildMarkers([event(),event({id:'later',first_us:(t+500)*1e6})],[bar],'5m',{cutoff:t+300});assert.equal(r.markers.length,1);assert.doesNotMatch(r.markers[0].text,/5M/);});
+test('legacy classification opt-in',()=>{const e=event({legacy_label:'TACTICAL_CUT_SHORT',action:'LOSS_REDUCE'});assert.equal(displayAction(e,false),'LOSS_REDUCE');assert.equal(displayAction(e,true),'CUT');});
+test('timezone presentation roundtrip never shifts underlying timestamp',()=>{for(const z of ['UTC','KST'])assert.equal(parseDateInput(localDateInput(t,z),z),t);});
+test('relative volume excludes current candle from baseline',()=>{const rows=Array.from({length:21},(_,i)=>({...bar,time:t+i*60,volume:i===20?100:10}));assert.equal(relativeVolume(rows,20),10);});
+test('relative volume missing data returns unknown',()=>{const rows=Array.from({length:21},()=>({...bar}));rows[2]={time:t};assert.equal(relativeVolume(rows,20),null);});
