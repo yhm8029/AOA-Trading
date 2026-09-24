@@ -1,4 +1,4 @@
-import {TF,ACTIONS,fmtQty,bucket,displayAction,completeAt,relativeVolume,parseDateInput,localDateInput} from './core.mjs';
+import {TF,ACTIONS,fmtQty,bucket,completeAt,relativeVolume,parseDateInput,localDateInput} from './core.mjs';
 import {isBar,validBars,candleMetrics,pct,windowRange,replayStart,indexAtCutoff,nextValidStep} from './review-core.mjs';
 import {firstEvent,knownEvents,completedOrder,visibleStudyEvents,episodeRange,newlyRevealed,markerDiagnostics,safeAction} from './study-core.mjs';
 import {studyMarkers} from './study-markers.mjs';
@@ -33,14 +33,14 @@ function initChart(){
   chart.subscribeClick(p=>{if(!p.time||S.loading)return;const hits=allowedEvents().filter(e=>bucket(eventTime(e),S.tf)===p.time);if(hits.length){const i=hits.findIndex(e=>e.id===S.selected);selectEvent(hits[(i+1)%hits.length],false).catch(error);}});updateZone();
 }
 function eventTime(e){return S.cutoff==null&&$('endpoint').value==='last'&&e.last_observed?e.end_time:e.time;}
-function allowedEvents(){return visibleStudyEvents(S.events,{minQty:Number($('minQty').value||0)*1e6,selected:S.selected,cutoff:S.cutoff,increases:$('increases').checked,reductions:$('reductions').checked});}
+function allowedEvents(){return visibleStudyEvents(S.events,{minQty:Math.max(0,Number($('minQty').value||0))*1e6,selected:S.selected,cutoff:S.cutoff,increases:$('increases').checked,reductions:$('reductions').checked});}
 function updateZone(){chart.applyOptions({localization:{timeFormatter:t=>date(t,true)}});chart.timeScale().applyOptions({tickMarkFormatter:(t,type)=>{const d=date(t,true);return S.tf==='1d'||[0,1,2].includes(type)?d.slice(5,10):d.slice(11,16);}});}
 function renderReferences(){for(const x of priceLines)candles.removePriceLine(x);priceLines=[];if(S.cutoff!=null||!$('referenceLines').checked)return;const e=S.events.find(e=>e.id===S.selected);if(!e)return;for(const [p,title,color] of [[e.price,'BitMEX 체결 (대체시장과 다름)','#c98916'],[e.basis_before,'BitMEX 직전 평균단가','#718297']])if(Number.isFinite(p)&&p>0)priceLines.push(candles.createPriceLine({price:p,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title}));}
 function renderMarkers(){
   const selected=allowedEvents();const out=studyMarkers(selected,S.visible,S.tf,{legacy:$('legacy').checked,cutoff:S.cutoff,selected:S.selected,endpoint:$('endpoint').value,allEvents:S.events});markerApi.setMarkers(out.markers);S.markerGroups=out.groups;
   const missing=S.visible.filter(b=>!isBar(b)).length,d=markerDiagnostics(selected,S.visible,S.tf,S.cutoff);
   $('coverage').textContent=`${S.visible.filter(isBar).length.toLocaleString()}개 완성 ${S.tf}봉 · 누락/불완전 ${missing.toLocaleString()}봉 · 원본 보간 없음${out.truncated?' · 마커 '+out.truncated+'개 생략':''}${S.cutoff!=null?' · 복기: 미래 봉·최종 성과 숨김':''}`;
-  $('markerStatus').textContent=`차트 대상 ${selected.length}주문 · 화면 밖 ${d.outside} · 누락 봉 ${d.gap} · 수량 필터로 숨김 ${knownEvents(S.events,S.cutoff).length-selected.length}. 첫 진입·마지막 관측 감량·선택 주문은 수량 필터 보호.`;
+  $('markerStatus').textContent=`차트 대상 ${selected.length}주문 · 화면 밖 ${d.outside} · 누락 봉 ${d.gap} · 필터 제외 ${knownEvents(S.events,S.cutoff).length-selected.length}. 첫 진입·마지막 관측 감량·선택 주문은 수량 필터 보호.`;
   renderReferences();
 }
 function safeFit(){const b=validBars(S.visible);if(!b.length)return;if(b.length===1){const i=S.visible.indexOf(b[0]);chart.timeScale().setVisibleLogicalRange({from:i-10,to:i+10});}else chart.timeScale().setVisibleRange({from:b[0].time,to:b.at(-1).time});}
@@ -108,11 +108,11 @@ function drawDetail(e){
 async function loadStudy(force=false){
   if(!S.episode)return;const known=knownEvents(S.events,S.cutoff),selected=known.find(e=>e.id===S.selected)||null;
   const key=[S.episode.id,S.selected,S.cutoff==null,known.length,selected&&completedOrder(selected,S.cutoff)].join('|');if(!force&&key===S.studyKey)return;
-  const serial=++S.studySerial,view=S.viewRequest;S.studyKey=key;const p=new URLSearchParams({episode:S.episode.id});if(selected)p.set('event',selected.id);if(S.cutoff!=null)p.set('cutoff',S.cutoff);
+  const serial=++S.studySerial,view=S.viewRequest;S.studyKey=key;S.study=null;const p=new URLSearchParams({episode:S.episode.id});if(selected)p.set('event',selected.id);if(S.cutoff!=null)p.set('cutoff',S.cutoff);
   $('studyPanel').textContent='사전 캔들·거래량·주문 흐름 해설 계산 중…';
   try{const d=await api('study?'+p);if(serial!==S.studySerial||view!==S.viewRequest)return;S.study=d;renderStudy($('studyPanel'),d,showEvidence);const e=d.event;
     $('eventBanner').textContent=e?`${date(e.time,true)} ${S.zone} · ${e.title} | ${e.summary}`:'아직 공개된 주문이 없습니다. 진입 봉에 도달하면 마커와 해설이 나옵니다.';
-  }catch(e){if(serial!==S.studySerial||view!==S.viewRequest)return;S.studyKey=null;$('studyPanel').textContent='해설 계산 실패: '+e.message;error(e);}
+  }catch(e){if(serial!==S.studySerial||view!==S.viewRequest)return;S.studyKey=null;$('studyPanel').textContent='해설 계산 실패: '+e.message;$('eventBanner').textContent='해설 계산 실패. 해설 새로고침으로 재시도하세요.';error(e);}
 }
 async function showEvidence(f){
   if(S.loading)return;stopPlaying();const center=(f.start+f.end)/2,tf=f.tf||S.tf;setTF(tf);let range=[f.start-10*TF[tf],f.end+5*TF[tf]];if(S.cutoff!=null)range[1]=Math.min(range[1],S.cutoff);if(range[1]<=range[0])return;
@@ -167,7 +167,14 @@ function bind(){
   $('lastFocus').onclick=()=>{if(!S.episode)return;resetReplay();const e=S.events.filter(e=>e.role==='Exit').at(-1)||S.events.at(-1);if(e)selectEvent(e).catch(error);};
   for(const [id,d] of [['earlier',-1],['later',1]])$(id).onclick=()=>{if(!S.episode)return;resetReplay();S.selected=null;loadWindow((S.anchor??S.episode.focus)+d*(S.end-S.start)*.75).then(()=>loadStudy()).catch(error);};
   $('fullEpisode').onclick=async()=>{if(!S.episode)return;resetReplay();const ep=S.episode,a=Math.max(ep.start-3600,ep.year_floor||0),b=Math.min(ep.end+3600,a+179*86400),tf=Object.keys(TF).find(k=>(b-a)/TF[k]<=3500)||'1d';setTF(tf);try{await loadWindow(ep.focus,[a,b]);await loadStudy();if(ep.end+3600>b)toast('첫 179일을 표시합니다. 다음 구간으로 이어서 보세요.');}catch(e){error(e);}};
-  $('fit').onclick=safeFit;$('screenshot').onclick=()=>capture().catch(error);for(const id of ['minQty','increases','reductions','legacy','endpoint','referenceLines'])$(id).onchange=()=>{renderEvents();renderMarkers();};
+  $('fit').onclick=safeFit;$('screenshot').onclick=()=>capture().catch(error);
+  // Apply numeric filters during input, not during blur between pointerdown/click.
+  // A duplicate change must not replace the clicked timeline node and swallow its click.
+  const filterIDs=['minQty','increases','reductions','legacy','endpoint','referenceLines'];
+  const filterSignature=()=>JSON.stringify(filterIDs.map(id=>$(id).type==='checkbox'?$(id).checked:$(id).value));
+  let appliedFilters=filterSignature();
+  const applyFilters=()=>{const key=filterSignature();if(key===appliedFilters)return;appliedFilters=key;renderEvents();renderMarkers();};
+  for(const id of filterIDs)$(id).onchange=applyFilters;$('minQty').oninput=applyFilters;
   $('replayEnabled').onchange=()=>{if($('replayEnabled').checked)beginReplay();else{resetReplay();renderChart(true);loadStudy(true).catch(error);}};$('replayStart').onclick=beginReplay;
   $('replaySlider').oninput=()=>{stopPlaying();if(!replayReady())return;if(S.cutoff==null&&!beginReplay())return;const b=validBars(S.bars),i=Math.min(Number($('replaySlider').value),b.length-1);if(i<0)return;S.replayIndex=i;S.cutoff=b[i].time+TF[S.tf];S.selected=knownEvents(S.events,S.cutoff).at(-1)?.id||null;applyReplay();};
   $('step').onclick=()=>{stopPlaying();nextStep().catch(error);};$('backStep').onclick=()=>{stopPlaying();if(!replayReady())return;if(S.cutoff==null&&!beginReplay())return;const b=validBars(S.bars),i=Math.max(0,S.replayIndex-1);if(!b[i]||b[i].time+TF[S.tf]>S.cutoff)return;S.replayIndex=i;S.cutoff=b[i].time+TF[S.tf];S.selected=knownEvents(S.events,S.cutoff).at(-1)?.id||null;applyReplay();};
