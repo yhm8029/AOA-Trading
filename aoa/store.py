@@ -17,6 +17,14 @@ CREATE TABLE IF NOT EXISTS notes (episode TEXT PRIMARY KEY, text TEXT NOT NULL, 
 PRAGMA user_version=1;
 '''
 
+class ClosingConnection(sqlite3.Connection):
+    """sqlite3's ordinary context manager commits but does not close the handle."""
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
 class Store:
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -26,7 +34,7 @@ class Store:
             db.executescript(SCHEMA)
 
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=45)
+        db = sqlite3.connect(self.path, timeout=45, factory=ClosingConnection)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('PRAGMA busy_timeout=45000')
@@ -99,7 +107,6 @@ class Store:
             for x in grouped.values():
                 x['focus']=x['focus'] or x['start']
                 x['result']='Win' if x['pnl_btc'] is not None and x['pnl_btc']>0 else 'Loss' if x['pnl_btc'] is not None and x['pnl_btc']<0 else 'Flat' if x['pnl_btc']==0 else 'Unknown'
-                # Include episodes overlapping selected year, not only newly opened episodes.
                 if year and not (datetime.fromtimestamp(x['start'],timezone.utc).year <= int(year) <= datetime.fromtimestamp(x['end'],timezone.utc).year):
                     continue
                 if result and x['result']!=result:
