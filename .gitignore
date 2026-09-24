@@ -4,7 +4,9 @@
 /imports/
 /exports/
 /vendor/
+/web/vendor/
 /dist/
+/artifacts/
 /test-results/
 /playwright-report/
 __pycache__/
@@ -14,6 +16,7 @@ __pycache__/
 *.zip
 *.gz
 *.csv
+*.xlsx
 !tests/fixtures/*.csv
 .env
 .env.*
