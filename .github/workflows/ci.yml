@@ -66,11 +66,41 @@ jobs:
       - name: Public market probe (record result separately)
         continue-on-error: true
         run: python -m scripts.verify_public_market
-      - run: python scripts/build_package.py
+      - name: Build runtime with source manifest and ZIP integrity check
+        run: python scripts/build_package.py
       - uses: actions/upload-artifact@v4
         with:
           name: AOA-Whale-Viewer-v0.3-runtime
           path: |
             dist/AOA-Whale-Viewer.zip
+            dist/AOA-Whale-Viewer.zip.sha256
+            dist/release-manifest.json
             test-results/*.json
           retention-days: 30
+  release:
+    needs: [unit, browser, package]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: AOA-Whale-Viewer-v0.3-runtime
+          path: release-input
+      - name: Publish tested v0.3.0 package without replacing an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="release-input/dist/AOA-Whale-Viewer.zip"
+          test -f "$asset"
+          python -c "import json,os; m=json.load(open('release-input/dist/release-manifest.json')); assert m['commit']==os.environ['GITHUB_SHA']; assert not m['user_data_included']"
+          (cd release-input/dist && sha256sum -c AOA-Whale-Viewer.zip.sha256)
+          if gh release view v0.3.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'v0.3.0 already exists; preserving its original assets. Use the run artifact for this commit.'
+          else
+            gh release create v0.3.0 "$asset" "$asset.sha256" release-input/dist/release-manifest.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'AOA Whale Viewer v0.3.0 — 매매 해설·복기 통합판' --notes-file docs/RELEASE_v0.3.0.md
+          fi
