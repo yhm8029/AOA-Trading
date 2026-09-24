@@ -1,7 +1,7 @@
 name: AOA Viewer CI
 on:
   push:
-    branches: [main, 'fix/replay-data-review', 'feat/study-v03']
+    branches: [main, 'fix/**', 'feat/study-v03']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -19,23 +19,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Compile Python and run ALL backend regressions
+      - name: Compile and run all backend and launcher regressions
         run: |
           python -m compileall -q aoa scripts run.py tests
           python -m unittest discover -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check JS and ALL pure-function regressions
+      - name: Check frontend syntax and pure-function regressions
         run: |
           node --check web/app.mjs
           node --check web/study-ui.mjs
+          node --check web/boot.mjs
           node --test tests/test_frontend.mjs tests/test_review_frontend.mjs tests/test_study_frontend.mjs
   browser:
     strategy:
       fail-fast: false
       matrix:
-        suite: [browser_test, browser_edge_test, browser_study_test]
+        suite: [browser_test, browser_edge_test, browser_study_test, browser_launch_test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,12 +47,12 @@ jobs:
       - run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
-      - name: Real browser using synthetic trade fixtures only
+      - name: Real Chromium regression with explicitly synthetic trade fixtures
         run: python -m tests.${{ matrix.suite }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: AOA-v03-${{ matrix.suite }}-evidence
+          name: AOA-v031-${{ matrix.suite }}-evidence
           path: test-results/
           retention-days: 30
   package:
@@ -63,19 +64,24 @@ jobs:
         with:
           python-version: '3.11'
       - run: python scripts/prepare_vendor.py
-      - name: Public market probe (record result separately)
+      - name: Public Binance probe (reported separately, not a user-data audit)
         continue-on-error: true
         run: python -m scripts.verify_public_market
-      - name: Build runtime with source manifest and ZIP integrity check
-        run: python scripts/build_package.py
+      - run: |
+          python scripts/build_package.py
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Verify extracted ZIP, old-port collision and browser operation
+        run: python scripts/test_packaged_runtime.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: AOA-Whale-Viewer-v0.3-runtime
+          name: AOA-Whale-Viewer-v0.3.1-runtime
           path: |
             dist/AOA-Whale-Viewer.zip
             dist/AOA-Whale-Viewer.zip.sha256
             dist/release-manifest.json
-            test-results/*.json
+            test-results/
           retention-days: 30
   release:
     needs: [unit, browser, package]
@@ -87,9 +93,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: AOA-Whale-Viewer-v0.3-runtime
+          name: AOA-Whale-Viewer-v0.3.1-runtime
           path: release-input
-      - name: Publish tested v0.3.0 package without replacing an existing release
+      - name: Publish verified v0.3.1 without replacing existing releases
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -97,10 +103,10 @@ jobs:
           set -euo pipefail
           asset="release-input/dist/AOA-Whale-Viewer.zip"
           test -f "$asset"
-          python -c "import json,os; m=json.load(open('release-input/dist/release-manifest.json')); assert m['commit']==os.environ['GITHUB_SHA']; assert not m['user_data_included']"
+          python -c "import json,os; m=json.load(open('release-input/dist/release-manifest.json')); assert m['version']=='0.3.1'; assert m['commit']==os.environ['GITHUB_SHA']; assert not m['user_data_included']"
           (cd release-input/dist && sha256sum -c AOA-Whale-Viewer.zip.sha256)
-          if gh release view v0.3.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'v0.3.0 already exists; preserving its original assets. Use the run artifact for this commit.'
+          if gh release view v0.3.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'v0.3.1 already exists; preserving published assets. This run artifact identifies its exact commit.'
           else
-            gh release create v0.3.0 "$asset" "$asset.sha256" release-input/dist/release-manifest.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'AOA Whale Viewer v0.3.0 — 매매 해설·복기 통합판' --notes-file docs/RELEASE_v0.3.0.md
+            gh release create v0.3.1 "$asset" "$asset.sha256" release-input/dist/release-manifest.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'AOA Whale Viewer v0.3.1 — 실행 혼선 수정판' --notes-file docs/RELEASE_v0.3.1.md
           fi

@@ -1,6 +1,6 @@
 // Render structured explanations with textContent only: imported text is never HTML.
 import {pct} from './review-core.mjs';
-export const UI_VERSION='0.3.0';
+export const UI_VERSION='0.3.1';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 export function renderStudy(root,data,onEvidence){
   root.replaceChildren();delete root.dataset.eventId;

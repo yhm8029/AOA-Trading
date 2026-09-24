@@ -1,5 +1,6 @@
 from __future__ import annotations
 import csv
+import hashlib
 import io
 import json
 import mimetypes
@@ -15,23 +16,33 @@ from .review import missing_plan
 from .model import TIMEFRAMES
 from .importer import import_file
 from .market import fetch_window
+from .version import VERSION, APP_ID
 
 ROOT=Path(__file__).resolve().parent.parent
 MAX_UPLOAD=512*1024*1024
-VERSION='0.3.0'
 
 class JobCancelled(Exception):
     pass
 
 class AppServer(ThreadingHTTPServer):
     daemon_threads=True
+    # Avoid a second Windows listener silently taking over an occupied port.
+    allow_reuse_address=False
     def __init__(self,address,directory):
         super().__init__(address,Handler)
-        self.store=Store(directory)
-        self.token=secrets.token_urlsafe(32)
-        self.job={'state':'idle'}
-        self.job_lock=threading.Lock()
-        self.cancel_event=threading.Event()
+        try:
+            self.store=Store(directory)
+            self.token=secrets.token_urlsafe(32)
+            self.job={'state':'idle'}
+            self.job_lock=threading.Lock()
+            self.cancel_event=threading.Event()
+            self.runtime={'application':APP_ID,'version':VERSION,'instance':secrets.token_hex(16),
+                          'pid':os.getpid(),'app_dir':str(ROOT.resolve()),
+                          'data_dir':str(self.store.directory.resolve()),
+                          'port':self.server_address[1],
+                          'ui_sha256':hashlib.sha256((ROOT/'web/index.html').read_bytes()).hexdigest()}
+        except Exception:
+            self.server_close();raise
 
     def start_job(self,fn,cleanup=lambda:None):
         with self.job_lock:
@@ -73,7 +84,7 @@ class Handler(BaseHTTPRequestHandler):
     def send_bytes(self,status,body,content_type='application/json; charset=utf-8',extra=None):
         self.send_response(status)
         for k,v in {'Content-Type':content_type,'Content-Length':str(len(body)),
-                    'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
+                    'Cache-Control':'no-store, max-age=0','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
                     'Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'",**(extra or {})}.items():self.send_header(k,v)
         self.end_headers()
         try:self.wfile.write(body)
@@ -86,7 +97,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():return
         path,q=self.query()
         try:
-            if path=='/api/status':return self.send_json(200,{'token':self.server.token,**self.server.store.status(),'version':VERSION})
+            if path=='/api/runtime':return self.send_json(200,self.server.runtime)
+            if path=='/api/status':return self.send_json(200,{'token':self.server.token,**self.server.store.status(),'version':VERSION,'runtime':self.server.runtime})
             if path=='/api/job':
                 with self.server.job_lock:snapshot=dict(self.server.job)
                 return self.send_json(200,snapshot)
