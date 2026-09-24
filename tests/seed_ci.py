@@ -10,7 +10,9 @@ from aoa.model import adapt_order,validate_bar,time_us,iso
 def seed(directory):
     store=Store(directory);start=time_us('2021-06-04T00:00:00Z')//1000000
     with store.connect() as db:
-        for i in range(24*60):
+        # Two days cover the viewer's context window beyond midnight. Deliberate
+        # internal gaps are created by each test, not by a truncated fixture.
+        for i in range(48*60):
             o=37000+150*math.sin(i/30)-i*.7;c=o+8*math.sin(i)
             Store.candle(db,validate_bar('BTCUSDT',start+i*60,o,max(o,c)+12,min(o,c)-12,c,20+10*abs(math.sin(i/8))),'SYNTHETIC-TEST-ONLY')
         for idx,(minute,role,before,after,px) in enumerate([(600,'Entry',0,5000000,36700),(620,'Entry',5000000,10000000,36650),(640,'Exit',10000000,5000000,36400),(680,'Exit',5000000,0,36300)]):
@@ -20,4 +22,4 @@ def seed(directory):
             Store.order(db,adapt_order(row),'SYNTHETIC-TEST-ONLY')
     return store
 
-if __name__=='__main__': seed(sys.argv[1])
+if __name__=='__main__':seed(sys.argv[1])

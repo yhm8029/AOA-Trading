@@ -1,105 +1,119 @@
-# AOA Whale Viewer
+# AOA Whale Viewer v0.2
 
-**고래가 진입하고 청산한 바로 그 캔들을, 거래량과 함께 보는 로컬 연구 앱입니다.**
+**고래의 실제 진입·추가·감량을 실제 캔들과 거래량 위에서 보는 로컬 연구 앱.**
 
 [![CI](https://github.com/yhm8029/AOA-Trading/actions/workflows/ci.yml/badge.svg)](https://github.com/yhm8029/AOA-Trading/actions/workflows/ci.yml)
 
-TradingView 계정이나 유료 요금제 없이 사용합니다. Lightweight Charts™로 실제 OHLCV를 표시하고, 기존 AOA 데이터의 주문 끝점을 해당 캔들에 연결합니다. 가짜 캔들·생성형 이미지·자동매매 기능은 없습니다.
+TradingView 계정 없이 과거 차트를 탐색합니다. 차트 엔진은 공식 Lightweight Charts이며 TradingView.com 사이트 자체가 아닙니다. 가짜 캔들·생성형 가격 이미지·거래소 로그인·자동매매는 없습니다.
 
-## 빠른 시작 — Windows
+## 기존 사용자 — 반드시 먼저 읽기
 
-1. 이 저장소에서 **Code → Download ZIP**으로 내려받고 압축을 풉니다.
-2. **`start_windows.bat`를 실행**합니다. Python 3.10 이상이 필요합니다. 기존 AOA 수집기를 돌린 PC라면 같은 Python을 사용할 수 있습니다.
-3. 첫 실행에만 고정 버전 차트 라이브러리를 받아 무결성을 확인합니다. 이후 브라우저가 `http://127.0.0.1:8765`로 열립니다.
-4. **데이터 가져오기 → `AOA_candle_analysis.zip`**을 선택합니다. `(1)`이 붙은 파일도 동일하게 지원합니다. ZIP을 수동으로 풀 필요 없습니다.
-5. **`AOA_XBTUSD_2021_events.csv`**를 추가하면 기존 연구 분류·수량·평균단가·순손익을 함께 확인할 수 있습니다. 기존 `order_context.csv`, 대표사례 타임라인, 캔들 특징 CSV도 보완 입력입니다.
-6. 왼쪽 **포지션 `3086` 또는 `3099`**을 검색해서 클릭하고, **1분/5분/15분/1시간/4시간/일봉**을 바꿔 봅니다. 오른쪽 주문을 클릭하면 그 캔들로 바로 이동합니다.
+이번 버전은 **main의 `run.py` / `local-data/viewer.sqlite3`**를 유지하는 수정판입니다. 별도 `feat/whale-viewer-v1`의 다른 DB를 덮어쓰지 않습니다.
 
-> Python이 없으면 [공식 Python 설치 페이지](https://www.python.org/downloads/windows/)에서 설치하세요. 이 앱 자체의 Python 패키지 설치는 없습니다. 콘솔을 닫으면 서버도 종료됩니다. 독립 실행형 EXE는 현재 포함하지 않습니다.
+1. **기존 실행 콘솔에서 Ctrl+C로 앱을 종료**하고 브라우저 탭을 닫습니다.
+2. 새 실행 ZIP을 풉니다. 프로그램 파일을 기존 앱 폴더에 덮어써도 됩니다.
+3. **`local-data/` 폴더는 지우지 마세요.** 새 폴더에 설치했다면 종료 상태에서 기존 `local-data/` 전체를 새 앱 폴더로 복사합니다. 원본/메모 DB는 자동으로 유지됩니다.
+4. `start_windows.bat` 실행 → 화면 상단 **v0.2.0** 확인. 여전히 v0.1이면 옛 서버가 실행 중입니다.
+5. 기존 데이터는 다시 가져오지 않아도 됩니다. **누락 시세 자동 보완**이 켜져 있으면 현재 차트에 없는 분봉만 Binance 공개 API에서 받습니다. 개인 주문·메모는 외부로 보내지 않습니다.
 
-macOS/Linux: `./start_unix.sh` 또는 `python3 run.py`.
-포트 충돌: `python run.py --port 8766`.
-다른 데이터 폴더: `python run.py --data-dir "D:\\AOA-local"`.
+[변경 내역과 계산 정의](docs/UPDATE_0_2.md)
 
-## 화면 구성
+## 처음 시작 — Windows
 
-- **왼쪽**: 계약/연도/롱·숏/승패/포지션 ID 검색, 이전·다음 포지션.
-- **가운데**: 실제 캔들 + 같은 시간축의 거래량, 마우스 확대·이동, 날짜 점프, 구간 이동, PNG 저장.
-- **캔들 위**: 숏 진입·추가 / 롱 감량. **캔들 아래**: 롱 진입·추가 / 숏 감량. 동일 캔들의 같은 종류 주문은 묶고 수량 합계를 표시합니다.
-- **오른쪽**: 주문 첫·마지막 체결시각, 실제 첫 가격, 산술/역수가중 평균가격, 주문 구간 전후 수량, 평균단가 대비 가격 변화, 사전 시장 특징, 출처.
-- **메모**: 포지션별 연구 태그와 메모를 SQLite에 저장합니다. 브라우저 새로고침 후에도 유지됩니다.
-- **봉 단위 복기**: 다음 봉으로 진행하거나 재생. 미래 OHLCV·주문·최종 손익·주문 전체 수량·사후 CUT/FLIP 분류를 숨깁니다. 개별 틱/미체결 주문을 재생하는 기능은 아닙니다.
+- Code → Download ZIP 또는 성공한 Actions의 `AOA-Viewer-v0.2-runtime-and-tests` 실행 패키지를 받습니다. Actions ZIP의 **`dist/AOA-Whale-Viewer.zip`**을 한 번 더 풉니다.
+- **Python 3.10 이상**이 필요합니다. `start_windows.bat`를 더블클릭하면 로컬 브라우저 앱이 열립니다. Node.js나 Python 추가 패키지는 실행에 필요 없습니다. Python까지 포함한 독립 EXE는 아닙니다.
+- 데이터 가져오기에서 `AOA_candle_analysis.zip`과 `AOA_XBTUSD_2021_events.csv`를 선택합니다. 파일명에 `(1)`이 붙어도 됩니다. 기존 월별 시장 ZIP, 컨텍스트 CSV, 대표사례 타임라인, 캔들 특징 CSV도 지원합니다.
+- 포지션 ID를 선택한 뒤 오른쪽 주문을 클릭하면 해당 캔들로 바로 이동합니다.
 
-## 중요한 데이터 구분
+소스 ZIP은 첫 실행에만 고정 버전 차트 라이브러리 다운로드가 필요합니다. Actions 실행 패키지는 라이브러리를 포함합니다.
 
-**BitMEX 실제 체결가격과 Binance 현물 캔들은 다른 데이터입니다.** 시점으로 마커를 연결하며 가격을 강제로 일치시키지 않습니다. 캔들 밑 거래량은 Binance 해당 현물 거래쌍의 기준자산 거래량입니다. 고래 본인의 체결량이나 BitMEX 거래량이 아닙니다.
+```sh
+python run.py
+python run.py --port 8766
+python run.py --data-dir "D:\\AOA-local"
+```
 
-- 원문 거래시각을 **잠정 UTC**로 해석합니다. KST 스위치는 표시만 +9시간 합니다.
-- 주문별 첫·마지막 끝점은 하나의 주문입니다. 두 번 세지 않습니다.
-- 표시 수량과 평균가격은 **분할체결 주문 전체의 사후 합계**일 수 있습니다.
-- 첫 체결 전 수량과 마지막 체결 뒤 수량 사이에는 다른 주문이 섞일 수 있습니다. 따라서 이 데이터를 누적해서 정확한 실시간 보유량 그래프로 만들지 않습니다.
-- 기본 분류는 원장 역할·확인된 수량·평균단가·명시 주문유형을 씁니다. 이전 Pine의 `TACTICAL_CUT`/`FLIP`은 **가설 옵션**으로 별도 보존합니다. 미래 최대 수량 5%/3% 기준을 실시간 신호에 쓰지 않습니다.
-- `익절*`, `손실감량*`은 **당시 평균단가 대비 가격** 기준입니다. 수수료·펀딩을 차감한 주문 순손익이 아닙니다. 실제 Stop 주문유형이 없으면 손실 감량을 Stop이라고 부르지 않습니다.
-- 현재 제공된 표에 없는 PnL·수량·가격·캔들은 **미확보**로 표시합니다. 0이나 가상 값으로 채우지 않습니다.
+macOS/Linux: `./start_unix.sh` 또는 `python3 run.py`. 종료: Ctrl+C.
 
-## 캔들 데이터가 비어 있을 때
+## 화면에서 할 수 있는 것
 
-`AOA_candle_analysis.zip`의 원본 분봉은 **주문 주변을 잘라 모은 데이터**이므로 긴 보유 구간 전체가 연속적이라고 보장하지 않습니다.
-
-1. 이미 보관한 `AOA_market_data.zip`이나 Binance 월별 `BTCUSDT-1m-YYYY-MM.zip`을 가져옵니다. 앱이 실제 로컬 분봉을 읽습니다.
-2. 또는 원하는 기간으로 이동한 뒤 **데이터 가져오기 → 현재 차트 구간의 실제 1분봉 받기**를 누릅니다. 클릭할 때만 Binance 공개 API에서 받으며, 주문 정보는 전송하지 않습니다.
-3. 수동 다운로드 범위는 한 번에 **20,000분 이내**입니다. 더 넓으면 시간대를 낮추거나 월별 ZIP을 사용하세요. 418/451 등 접근 제한은 우회하지 않고 중단합니다.
-
-누락된 1분이 있는 5분/1시간봉은 부분 합계로 만들지 않습니다. **전체 상위 봉을 빈칸**으로 두고 누락 개수를 알립니다. 중복 분봉이 서로 다르면 양쪽 모두 격리합니다.
-
-차트 한 화면의 요청은 성능상 **4,000봉**으로 제한하지만 전체 과거 보관 기간은 제한하지 않습니다. 날짜·주문 클릭으로 2018~2021 어느 시점이나 바로 요청합니다. 자동 무한 스크롤은 없고 **◀ 구간 / 구간 ▶**로 추가 구간을 요청합니다.
-
-## 어떤 파일을 넣는가
-
-| 입력 | 용도 |
+| 기능 | 사용법 |
 |---|---|
-| `AOA_candle_analysis.zip` | 정규화된 1분봉 + 주문 끝점. 가장 먼저 권장 |
-| `order_context.csv` | 첫/마지막 주문 시각·방향·주문 ID와 사전 시장 특징 |
-| `AOA_XBTUSD_2021_events.csv` 또는 월별 CSV | 기존 연구 분류, 평균단가·순손익 보완 |
-| `AOA_대표사례_주문타임라인.csv` | 주문 구간, 실제 평균가격, 전후 수량, Stop 조건 보완 |
-| `order_candle_features.csv` | 캔들 모양·사전 거래량 특징 보완. post_*는 적재하지 않음 |
-| `AOA_market_data.zip` / 월별 1분 ZIP | 더 넓은 실제 시장 분봉 |
+| 연도 선택 | 기본은 **첫 관측 진입 연도**. 전년도 이월 포함은 별도 체크. 목록과 차트가 함께 변경됨 |
+| 시간봉 | 1m/5m/15m/1h/4h/1d. 같은 주문/날짜 anchor를 유지 |
+| 캔들·거래량 | 같은 시간축. 확대/축소·드래그·날짜 이동·포지션 전체 보기 |
+| 주문 마커 | 숏 증가 위/감량 아래, 롱은 반대. 같은 봉의 같은 종류는 묶음 |
+| 마우스 호버 | 시가/고가/저가/종가, **봉 등락률 %, 전봉 대비 %, 고저폭 %, 거래량·RV20** |
+| 주문 타임라인 | 선택 주문으로 이동, 이전/다음 주문, 감량 가격변화율 표시 |
+| 복기 | 진입/선택 주문 직전 시작, 실제 완성 봉만 재생, 속도·이전/다음 봉·슬라이더 |
+| 미래정보 차단 | 복기 시 미래 봉·최종 손익·집계수량·주문 종료시각·사후 분류 숨김 |
+| 포지션 성과 | 감량 가격성과 참고 %, 원장 BTC 순손익, 입력 증거금 기준 참고 ROI |
+| 시세 공백 보완 | 없는 1분봉만 요청·검증·캐시. 진행상황·중단·남은 공백 표시 |
+| 연구 기록 | 포지션별 메모·태그 영속 저장, CSV/PNG 내보내기 |
 
-`aoa_public_...zip` 원본 개별 execution 행을 새 포지션 원장으로 복원하는 엔진은 **이번 버전에 포함하지 않았습니다.** 기존에 검산된 가공 주문 끝점을 입력합니다. 처음 보는 CSV는 지원 헤더인지 검증하고, 모르는 형식을 임의 추측해서 매매로 만들지 않습니다. ZIP 안에서 지원하지 않는 보조파일은 목록에 기록하고 건너뜁니다.
+## 퍼센트의 의미 — 혼동하지 마세요
 
-## 로컬 데이터와 보안
+**봉 등락률**: `(C/O−1)×100`. **전봉 대비**: `(C/직전 종가−1)×100`, 직전 봉이 없으면 미확보. **고저폭**: `(H−L)/O×100`.
 
-기본 저장소는 `local-data/viewer.sqlite3`입니다. 원본은 수정하지 않고 읽으며, 업로드 임시 복사본은 가져오기 이후 제거합니다. SHA-256으로 동일 파일 재가져오기를 막습니다. 메모까지 백업하려면 앱을 종료한 뒤 `local-data/` 폴더 전체를 복사하세요.
+**감량 가격성과***는 제공된 Exit 주문의 수량가중 방향환산 가격변화입니다. 그룹 평균/첫 가격과 주문 직전 평균단가를 비교하는 **참고 근사값**입니다. 분할체결 동안 평균단가가 변할 수 있고 제공된 주문이 일부일 수 있으므로 실제 전체 실현수익률이라고 부르지 않습니다. 사용된 감량 주문 수·수량 커버리지를 표시합니다.
 
-서버는 **127.0.0.1에만 바인딩**, Host/Origin 검사와 변경 요청 토큰을 사용합니다. 원장·시장 ZIP·개인 메모는 `.gitignore` 대상이며 GitHub에 포함하지 않습니다. 외부 계정/API 키, 매매 주문, 광고·분석 추적, 임시 파일 공유 사이트 업로드는 없습니다. 처음 실행할 때 차트 패키지를 받는 네트워크와 사용자 요청 공개 시세 다운로드만 있습니다.
+**원장 순손익**은 입력 파일에 제공된 BTC 값만 사용합니다. **증거금 참고 ROI**는 사용자가 확인한 참고 증거금을 입력한 경우에만 계산합니다. 근거가 없으면 미확보이며 레버리지를 임의로 곱하지 않습니다. 변동 증거금·입출금·복리 계좌 수익률과 다릅니다.
 
-## 검증과 배포
+XBTUSD 역계약의 손익을 선형 USDT 계약처럼 계산하지 않습니다. BitMEX 체결가와 Binance 시세를 섞어 정확한 체결손익을 만들지 않습니다.
 
-```bash
+## 차트가 비어 있거나 일부 구간이 없을 때
+
+주문 주변만 추출한 캔들 ZIP에는 보유기간 전체가 없을 수 있습니다. 기본 **누락 시세 자동 보완**은 현재 요청한 구간에 없는 분만 공개 API에서 받습니다. 끄면 인터넷 요청 없이 기존 로컬 자료만 사용합니다. 수동 **이 구간 다시 보완**도 있습니다.
+
+- 한 작업 최대 180일, 1,000분 이하 요청으로 나누고 이미 있는 분봉은 다시 받지 않습니다.
+- 네트워크 대기 중 SQLite 쓰기 잠금을 잡지 않으며, 받은 페이지는 검증 후 저장합니다. 중단 후 재요청하면 남은 구간만 받습니다.
+- API가 비어 있거나 거래소 장애/상장 전 기간/지역 제한이면 그대로 알립니다. 접근 제한을 우회하지 않습니다.
+- 충돌 자료는 격리하며 자동으로 임의의 가격을 선택하지 않습니다.
+- 빠진 분이 있는 상위 봉은 부분 봉으로 그리지 않습니다. 누락/불완전 개수와 보완 후 남은 공백을 표시합니다.
+- 재생은 존재하는 실제 봉만 넘기고 건너뛴 시간 구간을 표시합니다. **건너뛰기 ≠ 누락 가격 복원**입니다.
+
+## 입력과 보존
+
+| 입력 | 역할 |
+|---|---|
+| `AOA_candle_analysis.zip` | 정규화 1분봉 + 주문 첫/마지막 끝점 |
+| `order_context.csv` | 주문 ID·역할·시각·사전 특징 |
+| `AOA_XBTUSD_2021_events.csv` / TradingView 패키지 | 기존 분류·수량·평균단가·포지션 순손익 보완 |
+| `AOA_대표사례_주문타임라인.csv` | 평균체결가·전후 수량·Stop 조건 |
+| `order_candle_features.csv` | 사전 캔들 특징 보완. post_*는 예측 입력으로 적재하지 않음 |
+| `AOA_market_data.zip` / Binance 월별 1분 ZIP | 연속 원본 시장 시세 |
+
+원본 `aoa_public_...zip` 개별 executions를 새로 전수 회계처리하는 엔진이나 XLSX 직접 가져오기는 이 버전 범위가 아닙니다. 그룹 끝점은 두 체결이 아니라 하나의 주문이며, 그 사이 타 주문이 섞일 수 있습니다. 이 끝점만으로 초 단위 보유량 경로를 만들지 않습니다.
+
+기본 DB: `local-data/viewer.sqlite3`. 원본을 수정하지 않습니다. 백업은 앱을 종료한 뒤 **local-data 폴더 전체**를 복사하세요. 기존 메모와 주문을 유지하며 참고 증거금 테이블만 추가합니다.
+
+서버는 127.0.0.1만 사용하고 Host/Origin·쓰기 토큰·엄격한 CSP를 적용합니다. 외부 계정 연결·추적·자동 업로드는 없습니다. 거래 파일과 메모는 GitHub/CI에 넣지 않습니다.
+
+## 테스트
+
+```sh
 python -m unittest discover -v
-node --test tests/test_frontend.mjs
+node --check web/app.mjs
+node --test tests/test_frontend.mjs tests/test_review_frontend.mjs
 python scripts/prepare_vendor.py
 python -m pip install playwright==1.55.0
 python -m playwright install chromium
 python -m tests.browser_test
+python -m scripts.verify_public_market
 python scripts/build_package.py
 ```
 
-GitHub Actions는 Windows/Linux × Python 3.11/3.13, 프런트 로직, Chromium에서 차트/마커/시간봉/메모/복기/PNG 저장을 검사합니다. `tests/seed_ci.py`는 **합성 테스트 전용**이고 실제 고래 거래로 표시하지 않습니다. CI 성공 후 Actions의 `AOA-Viewer-runtime-and-test-evidence` 아티팩트에서 차트 라이브러리가 포함된 실행 ZIP과 테스트 화면 PNG를 받을 수 있습니다. 소스 ZIP과 달리 이 실행 ZIP은 라이브러리 최초 다운로드도 이미 포함합니다.
+Windows/Linux Python 3.10/3.13, JS 회귀, Chromium 실제 클릭·호버·재생·시세 보완·메모·PNG 저장을 검사합니다. **거래 테스트는 합성 데이터**입니다. 별도 공개 시장 probe는 실제 Binance 2021-01-03 캔들의 작업 사본 공백을 API로 복원합니다. 이 검증과 사용자의 전체 ZIP 전수 가져오기는 다릅니다. 최신 CI 결과와 `public-market-probe.json`을 확인하세요.
 
-CI 통과는 제공된 4년 전체 원장을 다시 검산했다는 뜻이 아닙니다. 실제 파일 전수 가져오기 결과는 사용자 PC의 **검증 기록**에서 확인하세요.
+## 문서 / 라이선스
 
-## 문서
-
-- [기능명세](docs/FEATURES.md)
-- [설계·데이터 계약](docs/ARCHITECTURE.md)
-- [구현 상태와 후속 작업](docs/STATUS.md)
+- [v0.2 업데이트 및 계산 정의](docs/UPDATE_0_2.md)
+- [기능과 현재 범위](docs/FEATURES.md)
+- [설계](docs/ARCHITECTURE.md)
+- [구현 상태](docs/STATUS.md)
 - [연구 원칙](docs/RESEARCH.md)
 - [Codex 인수인계](docs/CODEX_HANDOFF.md)
 
-## 출처 / 라이선스
+차트: [tradingview/lightweight-charts](https://github.com/tradingview/lightweight-charts). 공개 시세: [Binance market-data-only API](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md). UI 흐름 참고: [lightweight-charts-python](https://github.com/louisnw01/lightweight-charts-python).
 
-차트: [TradingView Lightweight Charts™ 5.0](https://tradingview.github.io/lightweight-charts/docs/5.0), [pane API](https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes).
-시세: [Binance Market Data Only API](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md).
-
-앱 코드는 MIT. 차트 라이브러리는 Apache 2.0이며 별도 저작권·NOTICE를 보존합니다. AOA 원본 거래자료와 시장자료의 권리는 이 저장소의 MIT 라이선스로 재허가되지 않습니다. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참고하세요.
+앱 MIT, 차트 Apache-2.0. 저작권·NOTICE를 보존합니다. 원본 거래/시세자료를 이 저장소의 MIT로 재허가하지 않습니다. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

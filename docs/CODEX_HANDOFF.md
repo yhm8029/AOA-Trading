@@ -1,22 +1,15 @@
-# Codex 인수인계
+# Codex 인수인계 — main v0.2
 
-## 사용자 목표
-TradingView의 오래된 1분/5분봉 조회 제한 없이 실제 고래 포지션을 클릭해 캔들 위 진입/감량과 하단 거래량을 연구한다. 가짜 그림, 텍스트만의 보고서, 사용자가 수년치를 스크롤하는 UX는 금지.
+사용자 목적은 실제 캔들+거래량 위에서 실제 주문을 보고 복기하는 것입니다. 지침의 사실/추론, 그룹 끝점/개별체결, BitMEX/Binance, 사후정보를 구분하세요.
 
-## 먼저 할 일
-1. README와 `docs/ARCHITECTURE.md`, `docs/RESEARCH.md`를 읽는다.
-2. CI 결과와 테스트를 확인한다. `python -m unittest discover -v`, `node --test tests/test_frontend.mjs`.
-3. 사용자 PC의 `AOA_candle_analysis.zip`과 `AOA_XBTUSD_2021_events.csv`를 **로컬에서만** 가져온다.
-4. 실제 포지션 3086,3099와 CSV 원장 첫/마지막 시각을 수동 대조한다. 2018~2020도 전체 context가 적재된 경우만 지원된다고 말한다.
-5. 스크린샷/집계 기반으로 통과 근거를 추가한다. CI 합성 데이터와 실제 데이터 검사를 혼동하지 않는다.
+실행: run.py -> aoa.server.AppServer -> aoa.review.ReviewStore(Store). 기존 local-data/viewer.sqlite3 유지. 프런트 web/app.mjs, 순수 함수 core.mjs + review-core.mjs, UI index.html + style.css + review.css.
 
-## 우선 개선
-- `order_candle_features.csv` 현재 헤더 차이를 실제 파일과 대조하여 alias 추가.
-- 원본 `orders_deep.csv` / `episodes_deep.csv`의 실제 헤더 확인 후 엄격한 별도 adapter 작성.
-- 주문 그룹의 구간 중첩을 해소하는 정확한 개별 execution 기반 보유량 곡선.
-- 마커가 많은 시간봉에서 위치별 요약/툴팁 UX.
-- 무한 스크롤과 분봉 range cache; 동시에 요청한 결과의 역전 방지 유지.
-- 독립 Windows EXE 포장 (서버 loopback·보안 검사 유지).
+수정한 오류와 계산 정의는 UPDATE_0_2.md가 기준입니다. 재생 기준은 `S.anchor`, `S.cutoff`를 혼동하지 않아야 합니다. `S.bars`에는 whitespace가 있고 슬라이더 인덱스는 validBars만 셉니다. 현재 bar-open과 cutoff가 같으면 그 봉과 그 시각 주문을 공개하지 마세요.
 
-## 변경 금지 원칙
-원본/메모를 GitHub에 커밋하지 않는다. 누락 캔들을 만들어 채우지 않는다. 손실 Exit를 전부 Stop으로 바꾸지 않는다. 그룹 최종수량을 first fill 순간값으로 보지 않는다. 실제로 없는 자동매매·검증완료 기능을 문서에 추가하지 않는다.
+누락 다운로드는 aoa.market.fetch_window / review.missing_plan. HTTP 요청 대기 중 DB 쓰기 잠금을 유지하지 마세요. 가격을 보간/자동 수정하지 말고 충돌은 격리합니다. 자동 다운로드를 거절/실패하면 매 렌더마다 재시도하지 마세요. 사용자 주문이나 파일을 외부에 업로드하지 마세요.
+
+성과는 그룹 참고 근사값, 원장 BTC 순손익, 입력 증거금 참고 ROI를 분리합니다. price_return_pct를 전체 계좌 ROI로 바꾸거나 5배를 임의로 곱하지 마세요. 정확한 증거금 자료 없이는 실제 ROI 미확보가 맞습니다.
+
+검증: unittest discover, node --check web/app.mjs, node --test tests/test_frontend.mjs tests/test_review_frontend.mjs, tests.browser_test. 브라우저 테스트는 Playwright와 Chromium이 필요합니다. scripts.verify_public_market는 별도 외부 공개 시세 검증이며 네트워크 불가를 구분합니다. tests/seed_ci.py와 테스트 주문은 합성입니다.
+
+향후 원장 전체를 테스트하려면 로컬 원본만 읽고 집계 결과를 사용자에게 제시하세요. 사용자 원본을 공개 저장소/CI fixtures로 커밋하지 마세요. 별도 feat/whale-viewer-v1의 data/aoa.sqlite3를 main DB에 이름만 바꿔 연결하지 마세요.
