@@ -1,7 +1,8 @@
-"""Local SQLite with immutable source provenance and complete-bar aggregation."""
+"""Local SQLite with source provenance and complete-bar aggregation."""
 from __future__ import annotations
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from .model import TIMEFRAMES
 
@@ -41,11 +42,21 @@ class Store:
             db.executescript(SCHEMA)
             db.execute("INSERT OR IGNORE INTO metadata VALUES('revision','0')")
 
+    @contextmanager
     def connect(self):
+        # sqlite3.Connection.__exit__ commits but does NOT close the handle.
+        # Always close explicitly so Windows can back up/remove a stopped DB.
         db = sqlite3.connect(self.path, timeout=60)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA busy_timeout=60000')
-        return db
+        try:
+            yield db
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def stats(self):
         with self.connect() as db:
@@ -70,9 +81,8 @@ class Store:
              max(pnl) AS pnl_max,max(pair) AS pair FROM events
              GROUP BY symbol,episode_id,direction ORDER BY start_us''')]
         for r in rows:
-            r['net_pnl_btc'] = r.pop('pnl_min') if r['pnl_min'] == r['pnl_max'] else None
-            r.pop('pnl_max')
-            r.pop('pnl_min', None)
+            r['net_pnl_btc'] = r['pnl_min'] if r['pnl_min'] == r['pnl_max'] else None
+            r.pop('pnl_max');r.pop('pnl_min')
             r['range_basis'] = '표시 주문의 첫/마지막 끝점 범위; 원장 전체 보유기간과 다를 수 있음'
         return rows
 

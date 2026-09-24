@@ -1,8 +1,10 @@
 # Third-party notices
 
-This project uses **TradingView Lightweight Charts™ 5.2.1**, licensed under the Apache License, Version 2.0. The official package includes NOTICE and LICENSE files. `prepare_assets.py` retains them under `web/vendor/`, and the packaged application includes both files. The application displays **Charts by TradingView** linking to https://www.tradingview.com/ and a link to the bundled NOTICE.
+This project uses **TradingView Lightweight Charts™ 5.2.1**, licensed under the Apache License, Version 2.0. `prepare_assets.py` retains the package's LICENSE and the matching upstream tag's NOTICE under `web/vendor/`; the npm tarball does not itself contain NOTICE. The packaged app includes both files. The application displays **Charts by TradingView** linking to https://www.tradingview.com/ and a link to the bundled NOTICE.
 
 Upstream project: https://github.com/tradingview/lightweight-charts
+
+Exact NOTICE source: https://github.com/tradingview/lightweight-charts/blob/v5.2.1/NOTICE
 
 The chart package incorporates parts of tslib under BSD Zero Clause; see its upstream distribution notices.
 

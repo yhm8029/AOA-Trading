@@ -12,6 +12,9 @@ from urllib.parse import urlparse
 VERSION='5.2.1'
 ROOT=Path(__file__).resolve().parent
 DEST=ROOT/'web'/'vendor'
+# npm 5.2.1 does not ship NOTICE. Exact notice read from the matching upstream tag:
+# https://github.com/tradingview/lightweight-charts/blob/v5.2.1/NOTICE
+NOTICE='TradingView Lightweight Charts™\nCopyright (с) 2025 TradingView, Inc. https://www.tradingview.com/\n'
 
 
 def download(url,limit):
@@ -27,7 +30,11 @@ def ensure_assets():
     script=DEST/'lightweight-charts.js'
     if manifest.exists() and script.exists():
         data=json.loads(manifest.read_text(encoding='utf-8'))
-        if data.get('version')==VERSION and hashlib.sha256(script.read_bytes()).hexdigest()==data.get('script_sha256'):
+        checks=data.get('files',{})
+        valid=data.get('version')==VERSION and all(
+            (DEST/name).is_file() and hashlib.sha256((DEST/name).read_bytes()).hexdigest()==checks.get(name)
+            for name in ('lightweight-charts.js','LICENSE','NOTICE'))
+        if valid:
             return data
         raise RuntimeError('Chart asset hash mismatch. Remove web/vendor then restart to re-download.')
     print('Downloading official Lightweight Charts '+VERSION+' (first run only)...',flush=True)
@@ -42,17 +49,29 @@ def ensure_assets():
     integrity=metadata['dist']['integrity']
     if integrity!='sha512-'+base64.b64encode(hashlib.sha512(body).digest()).decode():
         raise RuntimeError('Official package integrity verification failed')
-    DEST.mkdir(parents=True,exist_ok=True)
+    output={}
     with tarfile.open(fileobj=io.BytesIO(body),mode='r:gz') as tf:
-        for member,target in [('package/dist/lightweight-charts.standalone.production.js','lightweight-charts.js'),('package/LICENSE','LICENSE'),('package/NOTICE','NOTICE')]:
+        for member,target in [('package/dist/lightweight-charts.standalone.production.js','lightweight-charts.js'),('package/LICENSE','LICENSE')]:
             f=tf.extractfile(member)
             if f is None:
                 raise RuntimeError('Missing package member '+member)
-            data=f.read(3000000)
-            (DEST/target).write_bytes(data)
-    data=dict(version=VERSION,source=tarball,integrity=integrity,
-        script_sha256=hashlib.sha256(script.read_bytes()).hexdigest())
-    manifest.write_text(json.dumps(data,indent=2),encoding='utf-8')
+            with f:
+                output[target]=f.read(3000000)
+        if 'package/NOTICE' in tf.getnames():
+            with tf.extractfile('package/NOTICE') as f:
+                output['NOTICE']=f.read(100000)
+        else:
+            output['NOTICE']=NOTICE.encode('utf-8')
+    DEST.mkdir(parents=True,exist_ok=True)
+    checks={}
+    for name,content in output.items():
+        temp=DEST/(name+'.partial')
+        temp.write_bytes(content);temp.replace(DEST/name)
+        checks[name]=hashlib.sha256(content).hexdigest()
+    data=dict(version=VERSION,source=tarball,integrity=integrity,files=checks,
+              notice_source='https://github.com/tradingview/lightweight-charts/blob/v5.2.1/NOTICE')
+    temp=DEST/'manifest.json.partial'
+    temp.write_text(json.dumps(data,indent=2),encoding='utf-8');temp.replace(manifest)
     return data
 
 if __name__=='__main__':
