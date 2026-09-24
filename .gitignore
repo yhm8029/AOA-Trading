@@ -1,0 +1,23 @@
+# Keep original trades, candle archives, private notes and databases local.
+/local-data/
+/data/
+/imports/
+/exports/
+/vendor/
+/dist/
+/test-results/
+/playwright-report/
+__pycache__/
+*.py[cod]
+*.sqlite*
+*.db
+*.zip
+*.gz
+*.csv
+!tests/fixtures/*.csv
+.env
+.env.*
+.venv/
+node_modules/
+.DS_Store
+Thumbs.db
