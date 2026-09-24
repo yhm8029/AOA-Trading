@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -15,6 +16,17 @@ from tests.fixtures import package,event,csv_bytes
 from prepare_assets import ensure_assets
 ROOT=Path(__file__).resolve().parents[1]
 ART=ROOT/'artifacts'
+
+def wait(page,expression,timeout=30000):
+    """Poll via DevTools, not page-injected eval. Keep production CSP enabled.
+    See microsoft/playwright#7395. Never add unsafe-eval to the app to pass tests.
+    """
+    deadline=time.monotonic()+timeout/1000
+    while time.monotonic()<deadline:
+        if page.evaluate('Boolean('+expression+')'):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError('Timed out waiting for: '+expression)
 
 @contextmanager
 def diagnostics(page,errors):
@@ -51,14 +63,14 @@ def main():
                 page.on('request',lambda request:external.append(request.url) if request.url.startswith('http') and not request.url.startswith(('http://127.0.0.1:','http://localhost:')) else None)
                 with diagnostics(page,errors):
                     page.goto(f'http://127.0.0.1:{server.server_address[1]}',wait_until='networkidle')
-                    page.wait_for_function('window.__AOA !== undefined')
+                    wait(page,'window.__AOA !== undefined')
                     expect(page.locator('#empty-state')).to_be_visible()
                     done('empty app has no fabricated trades')
                     page.locator('#empty-import').click()
                     page.locator('#file-input').set_input_files(str(fixture))
                     page.locator('#upload-files').click()
-                    page.wait_for_function('window.__AOA.state.episodes.length === 2 && window.__AOA.state.chartMeta?.valid > 0',timeout=90000)
-                    page.wait_for_function("document.querySelector('#upload-files').disabled === false")
+                    wait(page,'window.__AOA.state.episodes.length === 2 && window.__AOA.state.chartMeta?.valid > 0',timeout=90000)
+                    wait(page,"document.querySelector('#upload-files').disabled === false")
                     page.locator('#import-dialog .dialog-close').click()
                     expect(page.locator('#chart-title')).to_contain_text('900001')
                     assert page.locator('#chart canvas').count()>=4
@@ -69,14 +81,14 @@ def main():
                     assert page.evaluate('window.__AOA.state.groups.some(g=>g.marker.position === "belowBar")')
                     done('trade arrows above/below actual timeframe candles')
                     page.locator('.event-row').nth(1).click()
-                    page.wait_for_function('window.__AOA.state.selected?.source_orderid === "SYNTHETIC-order-002"')
-                    page.wait_for_function("document.querySelector('#event-volume-box')?.textContent.includes('직전 완성 1분')")
+                    wait(page,'window.__AOA.state.selected?.source_orderid === "SYNTHETIC-order-002"')
+                    wait(page,"document.querySelector('#event-volume-box')?.textContent.includes('직전 완성 1분')")
                     expect(page.locator('#event-detail')).to_contain_text('그룹 VWAP')
                     expect(page.locator('#event-detail')).to_contain_text('사후')
                     done('timeline click zooms + separate first/VWAP and volume timing')
                     for tf in (1,60,5):
                         page.locator(f'[data-tf="{tf}"]').click()
-                        page.wait_for_function(f'window.__AOA.state.chartMeta?.timeframe === {tf}')
+                        wait(page,f'window.__AOA.state.chartMeta?.timeframe === {tf}')
                     done('1m / 5m / 1h changes preserve trade times')
                     page.locator('#timezone').select_option('Asia/Seoul')
                     expect(page.locator('#event-detail')).to_contain_text('10:02:30')
@@ -93,7 +105,7 @@ def main():
                     page.locator('#save-note').click()
                     expect(page.locator('#note-status')).to_contain_text('버전 1')
                     page.reload(wait_until='networkidle')
-                    page.wait_for_function('window.__AOA?.state.chartMeta?.valid > 0')
+                    wait(page,'window.__AOA?.state.chartMeta?.valid > 0')
                     page.locator('#tab-notes').click()
                     expect(page.locator('#note-body')).to_have_value(note)
                     assert not page.evaluate('Boolean(window.bad)')
@@ -104,7 +116,7 @@ def main():
                     page.locator('#theme-toggle').click()
                     done('light and dark themes')
                     page.locator('#fit-episode').click()
-                    page.wait_for_function('window.__AOA.state.chartMeta?.valid > 0 && document.querySelector("#loading").hidden')
+                    wait(page,'window.__AOA.state.chartMeta?.valid > 0 && document.querySelector("#loading").hidden')
                     page.locator('.mode-badge').evaluate("e=>{e.textContent='SYNTHETIC TEST DATA — NOT AOA';e.style.color='#c62828';}")
                     with page.expect_download() as d:
                         page.locator('#snapshot').click()
@@ -118,7 +130,7 @@ def main():
                     done('selected episode CSV export')
                     page.screenshot(path=str(ART/'ui-synthetic-desktop.png'),full_page=True)
                     page.locator('#next-episode').click()
-                    page.wait_for_function('window.__AOA.state.ep?.episode_id === "900002" && window.__AOA.state.events.length === 2')
+                    wait(page,'window.__AOA.state.ep?.episode_id === "900002" && window.__AOA.state.events.length === 2')
                     expect(page.locator('#event-count')).to_contain_text('2 / 2')
                     done('previous/next episode navigation')
                     page.set_viewport_size({'width':430,'height':932})
@@ -126,16 +138,14 @@ def main():
                     page.screenshot(path=str(ART/'ui-synthetic-mobile.png'),full_page=True)
                     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 2')
                     done('responsive mobile layout without horizontal overflow')
-                    # Regression: switching to an unmapped contract must not retain
-                    # BTC candles, then export them underneath an ETH header.
                     unknown=path/'unknown-market-SYNTHETIC.csv'
                     unknown.write_bytes(csv_bytes([event(episode_id='900003',symbol='ETHUSD',reference_pair='',source_orderid='SYNTHETIC-UNMAPPED')]))
                     import_file(store,unknown)
                     page.reload(wait_until='networkidle')
-                    page.wait_for_function('window.__AOA?.state.episodes.length === 3')
+                    wait(page,'window.__AOA?.state.episodes.length === 3')
                     page.locator('#symbol-filter').select_option('ETHUSD')
                     page.locator('.episode-card').click()
-                    page.wait_for_function('window.__AOA.state.ep?.symbol === "ETHUSD" && window.__AOA.state.events.length === 1')
+                    wait(page,'window.__AOA.state.ep?.symbol === "ETHUSD" && window.__AOA.state.events.length === 1')
                     expect(page.locator('#empty-state')).to_be_visible()
                     assert page.evaluate('window.__AOA.state.chartMeta === null && window.__AOA.state.bars.length === 0')
                     page.locator('#snapshot').click()
