@@ -1,7 +1,7 @@
 name: AOA Viewer CI
 on:
   push:
-    branches: [main, 'fix/replay-data-review']
+    branches: [main, 'fix/replay-data-review', 'feat/study-v03']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -19,46 +19,58 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Compile Python
-        run: python -m compileall -q aoa scripts run.py tests
-      - name: Run offline backend tests
-        run: python -m unittest discover -v
+      - name: Compile Python and run ALL backend regressions
+        run: |
+          python -m compileall -q aoa scripts run.py tests
+          python -m unittest discover -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check JS syntax and all pure-function regressions
+      - name: Check JS and ALL pure-function regressions
         run: |
           node --check web/app.mjs
-          node --test tests/test_frontend.mjs tests/test_review_frontend.mjs
-  browser-and-package:
+          node --check web/study-ui.mjs
+          node --test tests/test_frontend.mjs tests/test_review_frontend.mjs tests/test_study_frontend.mjs
+  browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [browser_test, browser_edge_test, browser_study_test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prepare pinned chart library and notices
-        run: python scripts/prepare_vendor.py
-      - name: Install browser test dependency
-        run: |
+      - run: python scripts/prepare_vendor.py
+      - run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
-      - name: Browser test with clearly synthetic fixtures
-        run: |
-          python -m tests.browser_test
-          python -m tests.browser_edge_test
-      - name: Public Binance history probe (no user trade upload)
-        continue-on-error: true
-        run: python -m scripts.verify_public_market
-      - name: Build runtime ZIP without user data
-        run: python scripts/build_package.py
+      - name: Real browser using synthetic trade fixtures only
+        run: python -m tests.${{ matrix.suite }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: AOA-Viewer-v0.2-runtime-and-tests
+          name: AOA-v03-${{ matrix.suite }}-evidence
+          path: test-results/
+          retention-days: 30
+  package:
+    needs: [unit, browser]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/prepare_vendor.py
+      - name: Public market probe (record result separately)
+        continue-on-error: true
+        run: python -m scripts.verify_public_market
+      - run: python scripts/build_package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AOA-Whale-Viewer-v0.3-runtime
           path: |
             dist/AOA-Whale-Viewer.zip
-            test-results/*.png
             test-results/*.json
-          if-no-files-found: warn
           retention-days: 30

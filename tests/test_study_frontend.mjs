@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {TF} from '../web/core.mjs';
+import {criticalIds,visibleStudyEvents,knownEvents,episodeRange,newlyRevealed,markerDiagnostics,safeAction} from '../web/study-core.mjs';
+import {studyMarkers} from '../web/study-markers.mjs';
+const t=1609675200;
+const a={id:'a',time:t,first_us:t*1e6,last_us:t*1e6,last_observed:true,role:'Entry',direction:'Short',qty:17000,action:'ENTRY',position_before:0};
+const b={...a,id:'b',time:t+300,first_us:(t+300)*1e6,last_us:(t+301)*1e6,qty:3000,action:'ADD',position_before:17000};
+const c={...a,id:'c',time:t+600,end_time:t+650,first_us:(t+600)*1e6,last_us:(t+650)*1e6,role:'Exit',action:'CLOSE',position_after:0};
+const events=[a,b,c];
+const bar=x=>({time:x,open:100,high:102,low:98,close:101,volume:20});
+test('17K position first/last remain visible above 1M filter',()=>{assert.deepEqual(visibleStudyEvents(events,{minQty:1e6}).map(e=>e.id),['a','c']);assert.equal(visibleStudyEvents(events,{minQty:1e6,selected:'b'}).length,3);});
+test('quantity filter never erases the right timeline data',()=>assert.equal(knownEvents(events).length,3));
+test('entry and exit included by episode navigation across timeframes',()=>{for(const tf of Object.keys(TF)){const [lo,hi]=episodeRange({start:t,end:t+650,focus:t},tf,events);assert.ok(lo<=t&&hi>t+650,tf);}});
+test('cutoff exact boundary does not leak future event',()=>{assert.equal(knownEvents(events,t).length,0);assert.equal(newlyRevealed(events,t,t+60)[0].id,'a');assert.deepEqual([...criticalIds(events,null,t)],[]);});
+test('markers stay on correct candles on 1/5/15 minute bars',()=>{for(const tf of ['1m','5m','15m']){const step=TF[tf],lo=Math.floor(t/step)*step;const bars=Array.from({length:12},(_,i)=>bar(lo+i*step));const o=studyMarkers([a,c],bars,tf);assert.equal(o.markers.length,2);assert.equal(o.markers[0].time,lo);assert.equal(o.markers[0].position,'aboveBar');assert.equal(o.markers[1].position,'belowBar');}});
+test('replay shows actual first entry but not future order total',()=>{const e={...a,last_us:(t+600)*1e6,qty:5555555};const o=studyMarkers([e],[bar(t)],'1m',{cutoff:t+60});assert.match(o.markers[0].text,/진입/);assert.doesNotMatch(o.markers[0].text,/5.556|5555555/);});
+test('missing candle not snapped to a nearby candle',()=>{const o=studyMarkers(events,[bar(t-60),bar(t+60)],'1m');assert.equal(o.markers.length,0);const d=markerDiagnostics([a],[bar(t-60),{time:t},bar(t+60)],'1m');assert.equal(d.gap,1);assert.equal(d.outside,0);});
+test('replay action cannot use later average or later close',()=>{const e={...c,position_before:17000,first_price:101,basis_before:100,avg_price:1,action:'TP'};assert.equal(safeAction(e,t+620),'LOSS_REDUCE');assert.equal(safeAction(e,t+700),'CLOSE');});
