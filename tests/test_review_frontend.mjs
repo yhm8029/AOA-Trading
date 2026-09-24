@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {candleMetrics,windowRange,replayStart,indexAtCutoff,nextValidStep,pct} from '../web/review-core.mjs';
+const base=1609668000;
+const bar=(n)=>({time:base+n*60,open:100,high:105,low:98,close:102,volume:5});
+test('hover returns candle, previous-close and intrabar percentage',()=>{const m=candleMetrics(bar(1),{...bar(0),close:101},60);assert.ok(Math.abs(m.bodyPct-2)<1e-9);assert.ok(Math.abs(m.rangePct-7)<1e-9);assert.ok(Math.abs(m.previousPct-100/101)<1e-9);});
+test('previous close never bridges a missing candle',()=>assert.equal(candleMetrics(bar(2),bar(0),60).previousPct,null));
+test('missing bar never produces a percentage',()=>assert.equal(candleMetrics({time:base}),null));
+test('zero open and unknown percentages remain unknown',()=>{assert.equal(candleMetrics({...bar(0),open:0}),null);assert.equal(pct(null),'미확보');assert.equal(pct(0),'0.00%');});
+test('timeframe switching uses same anchor, not asymmetric window midpoint',()=>{for(const tf of ['1m','5m','15m','1h','4h','1d']){const r=windowRange(base,tf);assert.ok(r[0]<base&&r[1]>base);assert.ok(r[1]-r[0]<=180*86400);}});
+test('year floor prevents replay window falling into prior year',()=>{const y=Date.parse('2021-01-01T00:00:00Z')/1000;assert.equal(windowRange(y+3600,'1h',y)[0],y);});
+test('Play and toggle share a three-bar-before-entry seed',()=>{const r=replayStart(Array.from({length:30},(_,i)=>bar(i)),'1m',base+20*60,3);assert.equal(r.cutoff,base+17*60);assert.equal(r.index,16);});
+test('leading whitespace is never counted as playable bars',()=>{const r=replayStart([{time:base},bar(10),bar(11)],'1m',base,3);assert.equal(r.index,0);assert.equal(r.cutoff,base+11*60);assert.ok(r.warning);});
+test('all whitespace explains missing data instead of spinning',()=>{const r=replayStart([{time:base}],'1m',base);assert.equal(r.index,-1);assert.equal(r.cutoff,null);});
+test('gap playback skips real missing bars and reports count',()=>{const r=nextValidStep([bar(0),{time:base+60},bar(5)],'1m',0);assert.equal(r.skipped,4);assert.equal(r.cutoff,base+6*60);});
+test('changing timeframe does not reveal an incomplete higher bar',()=>{assert.equal(indexAtCutoff([bar(0)],'5m',base+240),-1);assert.equal(indexAtCutoff([bar(0)],'5m',base+300),0);});
+test('end of playable window is explicit',()=>assert.equal(nextValidStep([bar(0)],'1m',0),null));
