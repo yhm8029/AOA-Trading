@@ -44,7 +44,9 @@ jobs:
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
       - name: Browser test with clearly synthetic fixtures
-        run: python -m tests.browser_test
+        run: |
+          python -m tests.browser_test
+          python -m tests.browser_edge_test
       - name: Public Binance history probe (no user trade upload)
         continue-on-error: true
         run: python -m scripts.verify_public_market
