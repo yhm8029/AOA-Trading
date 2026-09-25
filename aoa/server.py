@@ -11,10 +11,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
-from .study import StudyStore as Store
+from .performance_ledger import PnlStore as Store
 from .review import missing_plan
 from .model import TIMEFRAMES
-from .importer import import_file
+from .performance_import import import_file
 from .market import fetch_window
 from .version import VERSION, APP_ID
 
@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path=='/api/import':
                 name=Path(q.get('name','')).name
-                if not name.lower().endswith(('.zip','.csv','.gz')):raise ValueError('ZIP, CSV, CSV.GZ만 지원합니다.')
+                if not name.lower().endswith(('.zip','.csv','.gz','.xlsx')):raise ValueError('ZIP, CSV, CSV.GZ만 지원합니다.')
                 length=int(self.headers.get('Content-Length','0'))
                 if length<=0 or length>MAX_UPLOAD:raise ValueError('파일당 512MB 이내만 지원합니다.')
                 with self.server.job_lock:

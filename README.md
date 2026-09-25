@@ -1,19 +1,23 @@
-# AOA Whale Viewer v0.3.1
+# v0.3.2 — 포지션 순손익률
+
+[이번 업데이트 실행/자료 연결](docs/RELEASE_v0.3.2.md)
+
+# AOA Whale Viewer v0.3.2
 
 **고래의 주문을 캔들·거래량 위에서 보고, 진입·추가·감량의 근거를 복기하는 로컬 연구 앱.**
 
-[실행 ZIP](https://github.com/yhm8029/AOA-Trading/releases/download/v0.3.1/AOA-Whale-Viewer.zip) · [배포 안내](docs/RELEASE_v0.3.1.md) · [CI](https://github.com/yhm8029/AOA-Trading/actions/workflows/ci.yml)
+[실행 ZIP](https://github.com/yhm8029/AOA-Trading/releases/download/v0.3.2/AOA-Whale-Viewer.zip) · [배포 안내](docs/RELEASE_v0.3.2.md) · [CI](https://github.com/yhm8029/AOA-Trading/actions/workflows/ci.yml)
 
 ## 기존 화면이 계속 나오던 문제
 
-v0.3.1은 기존 서버가 8765 포트를 점유해도 다른 로컬 포트로 새 앱을 실행합니다. 브라우저를 열기 전에 버전·프로세스·실행 ID를 확인합니다. 새 탭에 `v0.3.1`과 `실행 확인 v0.3.1`이 보여야 합니다. **이전 탭의 주소를 재사용하지 마세요.** 이전 프로세스는 강제 종료하지 않습니다.
+v0.3.2은 기존 서버가 8765 포트를 점유해도 다른 로컬 포트로 새 앱을 실행합니다. 브라우저를 열기 전에 버전·프로세스·실행 ID를 확인합니다. 새 탭에 `v0.3.2`과 `실행 확인 v0.3.2`이 보여야 합니다. **이전 탭의 주소를 재사용하지 마세요.** 이전 프로세스는 강제 종료하지 않습니다.
 
 ## Windows — 기존 사용자
 
 1. 실행 ZIP을 **새 빈 폴더**에 풉니다. 프로그램 파일을 섞어 덮어쓰지 않습니다.
 2. `start_windows.bat`를 실행합니다. **Python 3.10 이상**이 필요합니다.
 3. 기존 데이터 선택 창에서 **기존 앱 폴더 또는 local-data**를 선택합니다. 새 local-data에 SQLite 일관성 사본을 만들며 원본은 지우지 않습니다. **주문·캔들·메모를 파일별로 다시 넣을 필요가 없습니다.** 이미 새 폴더에 local-data가 있으면 선택 창 없이 시작합니다.
-4. 자동으로 열린 새 탭에서 `실행 확인 v0.3.1` 확인 → 포지션 선택 → 오른쪽 주문 클릭.
+4. 자동으로 열린 새 탭에서 `실행 확인 v0.3.2` 확인 → 포지션 선택 → 오른쪽 주문 클릭.
 
 폴더 선택을 취소하면 새 빈 데이터로 시작합니다. 나중에 데이터 사본을 만들 때는 `start_with_existing_data.bat`를 사용하세요. 새 폴더에 DB가 이미 있으면 덮어쓰기하지 않습니다. 원본 DB와 사본은 이후 자동 동기화되지 않습니다.
 
