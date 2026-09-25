@@ -1,4 +1,4 @@
-"""One-time, exact-anchor source integration. Run only by the integration workflow."""
+"""One-time exact-anchor source integration; CI definition is committed via connector."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 
@@ -21,13 +21,9 @@ def main():
     edit('web/index.html','<div id="episodeStats" class="stats"></div>','<section id="positionOutcome" aria-live="polite" hidden></section><div id="episodeStats" class="stats"></div>')
     edit('web/index.html','accept=".csv,.gz,.zip"','accept=".csv,.gz,.zip,.xlsx"')
     edit('web/index.html','<div id="dropzone"', '<p id="performanceHelp"><b>최종 순손익률 연결</b><br>기존 <b>AOA_candle_analysis.zip</b>을 다시 선택하면 이전에 건너뛴 포지션 손익표와 주문 평균가격을 새 방식으로 연결합니다. 기존 봉/메모는 유지됩니다.<br><b>AOA_거래분석_2018-2021.xlsx</b>의 포지션 시트, 명시적 BTC 손익 episodes.csv, <b>AOA_XBTUSD_2021_events.csv</b>도 지원합니다. XLSX만으로는 진입 계약가치 분모가 부족할 수 있어 주문 자료도 함께 필요합니다. 이미 가져온 파일도 새 손익 파서로 재처리합니다. 새 파일을 수집할 필요는 없습니다.</p><div id="dropzone"')
-    for path in ['aoa/version.py','web/index.html','web/boot.mjs','web/study-ui.mjs','.github/workflows/ci.yml']:
+    for path in ['aoa/version.py','web/index.html','web/boot.mjs','web/study-ui.mjs']:
         p=ROOT/path;s=p.read_text(encoding='utf-8');s=s.replace('0.3.1','0.3.2').replace('v031','v032').replace('v=031','v=032')
         p.write_text(s,encoding='utf-8')
-    edit('.github/workflows/ci.yml','browser_study_test, browser_launch_test]','browser_study_test, browser_launch_test, browser_pnl_test]')
-    edit('.github/workflows/ci.yml','node --check web/boot.mjs','node --check web/boot.mjs\n          node --check web/pnl-ui.mjs')
-    edit('.github/workflows/ci.yml','tests/test_study_frontend.mjs','tests/test_study_frontend.mjs tests/test_pnl_frontend.mjs')
-    edit('.github/workflows/ci.yml','실행 혼선 수정판','포지션 순손익률 연결판')
     p=ROOT/'README.md';s=p.read_text(encoding='utf-8');p.write_text('# v0.3.2 — 포지션 순손익률\n\n[이번 업데이트 실행/자료 연결](docs/RELEASE_v0.3.2.md)\n\n'+s.replace('0.3.1','0.3.2'),encoding='utf-8')
 
 if __name__=='__main__':main()
