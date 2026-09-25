@@ -123,7 +123,7 @@ def parse_snapshot(raw):
         row = {'daily':t//DAY_US,'wallet_btc':wallet,'amount_btc':amount,
                'account':account,'kind':kind,'row_key':key,'quality':'date_only_ledger'}
         if kind in CASHFLOW:
-            row.update(block=t//DAY_US,reason='입출금 날짜는 있으나 장중 시각이 없습니다.')
+            row.update(block=t//DAY_US,reason='DAILY_RECONCILED_CASHFLOW: 입출금 날짜는 있으나 장중 시각이 없습니다.')
         return row
     quality = 'provided_equity_estimate' if field(r, 'equityestimatebtc') else 'provided_snapshot'
     if key is None:
@@ -188,6 +188,9 @@ class DailyBook:
         reference_day = (datetime(1970,1,1)+timedelta(days=p['day'])).strftime('%Y-%m-%d')
         result.update(reference_day=reference_day,available_from_us=available,
                       age_seconds=(t-available)/1e6,sources=p['sources'])
+        if any(b['day']==p['day'] and not b.get('reason','').startswith('DAILY_RECONCILED_CASHFLOW:') for b in blocks):
+            result['reason']='해당 날짜에 검산에서 제외된 잔고 행이 있습니다. 일부 정상 행만으로 마감 잔고를 확정하지 않습니다.'
+            return result
         if not p['valid']:
             result['reason'] = p['reason'] + '. 이전 정상 날짜로 우회하지 않습니다.'
             return result

@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parent.parent
 
 def replace(path,old,new,count=1):
     p=ROOT/path;s=p.read_text(encoding='utf-8')
-    if old not in s and new in s:return
+    if new in s:return
     assert s.count(old)==count,(path,'unexpected source',s.count(old),old[:80])
     p.write_text(s.replace(old,new),encoding='utf-8')
 
