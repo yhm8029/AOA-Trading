@@ -1,8 +1,6 @@
-"""Historical account seed and order sizing; never infer deposited margin.
+"""Past-only seed references. Wallet-only input is NOT marked-to-market equity.
 
-Snapshots are joined strictly BEFORE an order. Equity is used only if explicitly
-provided. Wallet fallback excludes unrealised PNL and is labelled, not renamed NAV.
-A historical snapshot is a reference/estimate at the order time, never a live balance.
+No inferred margin allocation; no current/final balance applied to historic orders.
 """
 from __future__ import annotations
 import bisect
@@ -10,8 +8,7 @@ import json
 import math
 import re
 from collections import defaultdict
-from datetime import datetime,timezone
-from .model import time_us,iso,number
+from .model import time_us,number
 from .performance_ledger import PnlStore,finite,same
 
 VERSION='seed-1'
@@ -31,41 +28,32 @@ CREATE TABLE IF NOT EXISTS seed_imports (
  digest TEXT NOT NULL, parser TEXT NOT NULL, report TEXT NOT NULL,
  PRIMARY KEY(digest,parser));
 '''
-
-def norm(key):
-    return re.sub(r'[\s_\-()\[\]]','',str(key).lstrip('\ufeff')).lower()
-
-def normalized(row):
-    return {norm(k):v for k,v in row.items() if k is not None}
-
+def norm(key):return re.sub(r'[\s_\-()\[\]]','',str(key).lstrip('\ufeff')).lower()
+def normalized(row):return {norm(k):v for k,v in row.items() if k is not None}
 def field(row,*keys):
     for key in keys:
         v=row.get(norm(key))
-        if v is not None and str(v).strip() not in {'','nan','None','null'}:return str(v).strip()
+        if v is not None and str(v).strip().lower() not in {'','nan','none','null'}:return str(v).strip()
     return None
 
 def recognizes(headers):
-    h={norm(x) for x in headers}
-    return bool(h & {'walletbalance','walletbalancebtc','walletbtc','equitybtc','equityestimatebtc','marginbalancebtc','지갑잔고btc','순자산btc'})
+    return bool({norm(x) for x in headers} & {'walletbalance','walletbalancebtc','walletbtc','equitybtc','equityestimatebtc','marginbalancebtc','지갑잔고btc','순자산btc'})
 
 def parse_stamp(text):
     text=str(text).strip()
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}D',text):text=text[:-1]
     date_only=bool(re.fullmatch(r'\d{4}[-/]\d{2}[-/]\d{2}',text))
     text=text.replace('/','-')
     if len(text)>10 and text[10]=='D':text=text[:10]+'T'+text[11:]
-    us=time_us(text)
-    return us, 'date_only' if date_only else 'timestamp'
+    return time_us(text),'date_only' if date_only else 'timestamp'
 
 def parse_snapshot(raw):
-    r=normalized(raw)
-    status=(field(r,'transactstatus','status') or '').lower()
+    r=normalized(raw);status=(field(r,'transactstatus','status') or '').lower()
     if status in {'canceled','cancelled','rejected','pending','unconfirmed','failed','new'}:return None
-    if status and status not in {'completed','complete','confirmed','success','succeeded','done'}:
-        raise ValueError('확인되지 않은 잔고 거래 상태: '+status)
+    if status and status not in {'completed','complete','confirmed','success','succeeded','done'}:raise ValueError('확인되지 않은 잔고 거래 상태: '+status)
     stamp=field(r,'timestamp','asofutc','asof','transacttime','datetime','time','date','시각','날짜')
     if not stamp:raise ValueError('잔고 시각 열 미확인')
-    t,precision=parse_stamp(stamp)
-    account=field(r,'account','accountid','accountkey') or 'default'
+    t,precision=parse_stamp(stamp);account=field(r,'account','accountid','accountkey') or 'default'
     kind=(field(r,'transacttype','type') or '').lower()
     wallet=field(r,'walletbalancebtc','walletbtc','지갑잔고btc')
     equity=field(r,'equitybtc','marginbalancebtc','순자산btc','equityestimatebtc')
@@ -76,19 +64,14 @@ def parse_snapshot(raw):
         currency=field(r,'currency');unit=(field(r,'unit','balanceunit') or '').lower()
         if currency=='XBt' or unit in {'xbt_satoshi','satoshi','sat','sats'}:scale=100_000_000
         elif currency in {'BTC','XBT'} or unit in {'btc','bitcoin'}:scale=1
-        else:raise ValueError('walletBalance 단위 미확인: currency=XBt(사토시) / BTC 또는 명시적 wallet_balance_btc 필요')
+        else:raise ValueError('walletBalance 단위 미확인: currency=XBt(사토시) / BTC 또는 wallet_balance_btc 필요')
         wallet=number(field(r,'walletbalance'))/scale
     if wallet is None and equity is None:
-        if precision=='date_only' and kind in {'deposit','withdrawal','transfer'}:
-            return {'block':t//DAY_US,'account':account,'reason':'입출금 시각이 날짜까지만 있음'}
+        if precision=='date_only' and kind in {'deposit','withdrawal','transfer'}:return {'block':t//DAY_US,'account':account,'reason':'입출금 시각이 날짜까지만 있음'}
         return None
-    if precision=='date_only':
-        # Never pretend a date-only post-transaction balance was known at midnight.
-        return {'block':t//DAY_US,'account':account,'reason':'날짜만 있는 잔고/입출금: 장중 선후관계 미확인'}
-    key=field(r,'transactid','snapshotid','id')
-    if not key:key='|'.join(map(str,(t,wallet,equity,account)))
-    return {'t':t,'wallet_btc':wallet,'equity_btc':equity,'account':account,
-            'precision':precision,'quality':quality,'row_key':key}
+    if precision=='date_only':return {'block':t//DAY_US,'account':account,'reason':'날짜만 있는 잔고/입출금: 장중 선후관계 미확인'}
+    key=field(r,'transactid','snapshotid','id') or '|'.join(map(str,(t,wallet,equity,account)))
+    return {'t':t,'wallet_btc':wallet,'equity_btc':equity,'account':account,'precision':precision,'quality':quality,'row_key':key}
 
 class SeedBook:
     def __init__(self,rows=(),blocks=()):
@@ -101,18 +84,14 @@ class SeedBook:
                 if r.get(kind+'_btc') is not None:grouped[r['t']].append(r)
             result=[]
             for t,rr in sorted(grouped.items()):
-                values=[r[kind+'_btc'] for r in rr]
-                conflict=not all(same(values[0],v) for v in values)
-                result.append({'time_us':t,'btc':None if conflict else values[0],
-                               'conflict':conflict,'sources':sorted({r['source'] for r in rr}),
-                               'source_quality':sorted({r['quality'] for r in rr})})
+                values=[r[kind+'_btc'] for r in rr];conflict=not all(same(values[0],v) for v in values)
+                result.append({'time_us':t,'btc':None if conflict else values[0],'conflict':conflict,'sources':sorted({r['source'] for r in rr}),'source_quality':sorted({r['quality'] for r in rr})})
             self.by_kind[kind]=result;self.times[kind]=[r['time_us'] for r in result]
     def at(self,t,kind=None):
         result={'btc':None,'kind':kind,'time_us':None,'age_seconds':None,'quality':'unavailable','reason':'잔고 자료를 연결하세요.','sources':[]}
         if len(self.accounts)>1:
             result['reason']='서로 다른 계좌의 잔고가 섞여 있습니다. 합산하거나 임의 계좌를 선택하지 않습니다.';return result
-        kinds=(kind,) if kind else ('equity','wallet')
-        for k in kinds:
+        for k in ((kind,) if kind else ('equity','wallet')):
             i=bisect.bisect_left(self.times[k],t)-1
             if i<0:continue
             s=self.by_kind[k][i];result.update(s,kind=k,age_seconds=(t-s['time_us'])/1e6)
@@ -130,8 +109,8 @@ class SeedBook:
         return result
 
 def order_value(e):
-    explicit=e.get('contract_value_btc')
-    if finite(explicit) and explicit>0:return explicit,'provided_contract_value'
+    v=e.get('contract_value_btc')
+    if finite(v) and v>0:return v,'provided_contract_value'
     if e.get('symbol')!='XBTUSD':return None,'contract_formula_unverified'
     q=e.get('qty')
     if not finite(q) or q<=0:return None,'quantity_missing'
@@ -147,8 +126,7 @@ def ratio(value,seed):
     return None
 
 def order_sizing(e,initial,book):
-    current=book.at(e['first_us'],initial.get('kind'))
-    amount,quality=order_value(e)
+    current=book.at(e['first_us'],initial.get('kind'));amount,quality=order_value(e)
     before=e.get('position_before');after=e.get('position_after')
     delta=e.get('qty',0)*(1 if e.get('role')=='Entry' else -1)
     isolated=finite(before) and finite(after) and same(before+delta,after)
@@ -158,8 +136,7 @@ def order_sizing(e,initial,book):
     va=after/pa if e.get('symbol')=='XBTUSD' and e.get('last_observed') and finite(after) and after>=0 and finite(pa) and pa>0 else None
     if e.get('last_observed') and after==0:va=0.0
     end_seed=book.at(e['last_us'],initial.get('kind'))
-    return {'initial_seed':initial,'order_seed':current,'end_seed':end_seed,
-            'order_value_btc':amount,'value_quality':quality,
+    return {'initial_seed':initial,'order_seed':current,'end_seed':end_seed,'order_value_btc':amount,'value_quality':quality,
             'order_initial_seed_pct':ratio(amount,initial),'order_current_seed_pct':ratio(amount,current),
             'before_initial_seed_pct':ratio(vb,initial),'before_current_seed_pct':ratio(vb,current),
             'after_initial_seed_pct':ratio(va,initial),'after_current_seed_pct':ratio(va,end_seed),
@@ -183,22 +160,20 @@ class SeedStore(PnlStore):
         entries=[e for e in events if e.get('role')=='Entry']
         if not entries:return {'btc':None,'kind':None,'reason':'최초 진입 미확인','sources':[]}
         first=min(entries,key=lambda e:e['first_us'])
-        # A fragment beginning in the middle of a position is not an initial seed.
         if not first.get('first_observed') or first.get('position_before') not in (None,0):
             return {'btc':None,'kind':None,'reason':'관측 최초 주문 이전 보유량 존재/첫 끝점 미확인. 최초 시드로 단정하지 않음','sources':[]}
-        s=self.seed_book().at(first['first_us'])
-        s['anchor_us']=first['first_us'];s['anchor_status']='first_observed_entry' if first.get('position_before') is None else 'flat_to_position'
+        s=self.seed_book().at(first['first_us']);s['anchor_us']=first['first_us']
+        s['anchor_status']='first_observed_entry' if first.get('position_before') is None else 'flat_to_position'
         return s
     def events(self,episode):
-        rows=super().events(episode)
-        initial=self.initial_seed(rows);book=self.seed_book()
+        rows=super().events(episode);initial=self.initial_seed(rows);book=self.seed_book()
         for e in rows:e['sizing']=order_sizing(e,initial,book)
         return rows
     def performance(self,episode):
         p=super().performance(episode);events=self.events(episode);s=self.initial_seed(events)
         p['seed_initial']=s
         p['seed_return_pct']=ratio(p.get('net_pnl_btc'),s) if p.get('position_closed') and not p.get('pnl_conflict') else None
-        p['seed_return_note']='해당 포지션 순손익 / 최초 진입 직전 시드 참고값. 동시 포지션·입출금을 합친 계좌 전체 수익률 또는 증거금 ROI가 아닙니다.'
+        p['seed_return_note']='해당 포지션 순손익 / 최초 관측 진입 직전 시드 참고값. 동시 포지션·입출금을 합친 계좌 전체 수익률 또는 증거금 ROI가 아닙니다.'
         entries=[e for e in events if e['role']=='Entry'];vals=[e['sizing']['after_initial_seed_pct'] for e in events if finite(e['sizing']['after_initial_seed_pct'])]
         p['seed_first_order_pct']=entries[0]['sizing']['order_initial_seed_pct'] if entries else None
         p['seed_peak_observed_pct']=max(vals) if vals else None
@@ -206,12 +181,15 @@ class SeedStore(PnlStore):
         return p
     def episodes(self,*args,**kwargs):
         rows=super().episodes(*args,**kwargs)
+        # Same first-entry boundary checks as the detail panel. No N+1 queries.
         with self.connect() as db:
-            first={r['episode']:r['first_t'] for r in db.execute("SELECT episode,MIN(t) first_t FROM orders WHERE json_extract(payload,'$.role')='Entry' GROUP BY episode")}
-        book=self.seed_book()
+            first={}
+            for r in db.execute("SELECT episode,payload FROM orders WHERE json_extract(payload,'$.role')='Entry' ORDER BY t,id"):
+                if r['episode'] not in first:first[r['episode']]=json.loads(r['payload'])
+            declared={r['episode'] for r in db.execute("SELECT episode FROM performance_sources WHERE json_extract(payload,'$.end_us') IS NOT NULL AND json_extract(payload,'$.entry_qty')=json_extract(payload,'$.exit_qty')")}
         for r in rows:
-            t=first.get(r['id']);s=book.at(t) if t is not None else None
-            r['seed_return_pct']=ratio(r.get('pnl_btc'),s)
+            e=first.get(r['id']);s=self.initial_seed([e]) if e else None
+            r['seed_return_pct']=ratio(r.get('pnl_btc'),s) if r.get('closed') or r['id'] in declared else None
             r['seed_kind']=s.get('kind') if s else None
         return rows
     def status(self):
