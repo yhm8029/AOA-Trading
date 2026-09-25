@@ -1,0 +1,32 @@
+name: Integrate position performance sources
+on:
+  push:
+    branches: ['work/pnl-v032']
+    paths: ['scripts/integrate_v032.py']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply reviewed exact source edits
+        run: |
+          python scripts/integrate_v032.py
+          python -m compileall -q aoa web scripts tests
+          node --check web/app.mjs
+          node --check web/pnl-ui.mjs
+      - name: Commit integration on isolated development branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add aoa/server.py aoa/version.py web/app.mjs web/index.html web/boot.mjs web/study-ui.mjs .github/workflows/ci.yml README.md
+          git commit -m 'feat: wire position net returns, ledger imports and final-close result UI'
+          git push origin HEAD:work/pnl-v032
+          gh workflow run ci.yml --ref work/pnl-v032
