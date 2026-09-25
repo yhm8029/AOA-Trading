@@ -40,7 +40,7 @@ function renderReferences(){for(const x of priceLines)candles.removePriceLine(x)
 function renderMarkers(){
   const selected=allowedEvents();const out=studyMarkers(selected,S.visible,S.tf,{legacy:$('legacy').checked,cutoff:S.cutoff,selected:S.selected,endpoint:$('endpoint').value,allEvents:S.events});const resultMark=finalResultMarker(S.performance,S.visible,S.tf,S.cutoff);if(resultMark)out.markers.push(resultMark);out.markers.sort((a,b)=>a.time-b.time);markerApi.setMarkers(out.markers);S.markerGroups=out.groups;
   const missing=S.visible.filter(b=>!isBar(b)).length,d=markerDiagnostics(selected,S.visible,S.tf,S.cutoff);
-  $('coverage').textContent=`${S.visible.filter(isBar).length.toLocaleString()}개 완성 ${S.tf}봉 · 누락/불완전 ${missing.toLocaleString()}봉 · 원본 보간 없음${out.truncated?' · 마커 '+out.truncated+'개 생략':''}${S.cutoff!=null?' · 복기: 미래 봉·최종 성과 숨김':''}`;
+  $('coverage').textContent=`${S.visible.filter(isBar).length.toLocaleString()}개 완성 ${S.tf}봉 · 누락/불완전 ${missing.toLocaleString()}봉 · 원본 보간 없음${out.truncated?' · 마커 '+out.truncated+'개 생략':''}${S.cutoff!=null?(outcomeAvailable(S.performance,S.cutoff)?' · 복기: 종료 포지션 성과 공개':' · 복기: 미래 봉·최종 성과 숨김'):''}`;
   $('markerStatus').textContent=`차트 대상 ${selected.length}주문 · 화면 밖 ${d.outside} · 누락 봉 ${d.gap} · 필터 제외 ${knownEvents(S.events,S.cutoff).length-selected.length}. 첫 진입·마지막 관측 감량·선택 주문은 수량 필터 보호.`;
   renderReferences();
 }
@@ -59,8 +59,8 @@ function renderEpisodes(){
 function renderStats(){
   $('positionOutcome').hidden=!S.episode;if(S.episode)renderOutcome($('positionOutcome'),S.performance,S.cutoff,()=>{$('importDialog').showModal();});
   $('episodeStats').replaceChildren();$('performanceNote').textContent='';$('marginBox').hidden=S.cutoff!=null||!S.episode;if(!S.episode)return;const ep=S.episode,p=S.performance;
-  const vals=S.cutoff!=null?[['방향',dirLabel(ep.direction)],['복기 모드','최종 성과 숨김']]:[['방향',dirLabel(ep.direction)],['관측 주문',S.events.length+'건'],['관측 최대 보유',fmtQty(ep.max_observed_qty)],['원장 순손익',p?.net_pnl_btc==null?'미확보':p.net_pnl_btc.toFixed(3)+' BTC'],['감량 가격성과*',pct(p?.price_return_pct,3)],['증거금 참고 ROI',pct(p?.reference_roi_pct,3)]];
-  for(const [label,value] of vals){const b=node('div',null,'stat');b.append(node('small',label),node('strong',value));$('episodeStats').append(b);}if(S.cutoff==null&&p){$('performanceNote').textContent=`* 감량 근거 ${p.covered_exit_orders}/${p.observed_exit_orders}주문, 수량 ${pct(p.coverage_pct,1)}. ${p.note}`;$('marginInput').value=p.reference_margin_btc??'';}
+  const vals=S.cutoff!=null&&!outcomeAvailable(p,S.cutoff)?[['방향',dirLabel(ep.direction)],['복기 모드','최종 성과 숨김']]:[['방향',dirLabel(ep.direction)],['관측 주문',S.events.length+'건'],['관측 최대 보유',fmtQty(ep.max_observed_qty)],['원장 순손익',p?.net_pnl_btc==null?'미확보':p.net_pnl_btc.toFixed(3)+' BTC'],['감량 가격성과*',pct(p?.price_return_pct,3)],['증거금 참고 ROI',pct(p?.reference_roi_pct,3)]];
+  for(const [label,value] of vals){const b=node('div',null,'stat');b.append(node('small',label),node('strong',value));$('episodeStats').append(b);}if(outcomeAvailable(p,S.cutoff)){$('performanceNote').textContent=`* 감량 근거 ${p.covered_exit_orders}/${p.observed_exit_orders}주문, 수량 ${pct(p.coverage_pct,1)}. ${p.note}`;$('marginInput').value=p.reference_margin_btc??'';}
 }
 async function selectEpisode(ep){
   if(S.noteDirty&&!confirm('저장하지 않은 연구 메모가 있습니다. 이동할까요?'))return;
