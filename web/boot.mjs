@@ -1,6 +1,6 @@
 // Verify process, UI source, and version BEFORE enabling chart actions.
-import {UI_VERSION} from './study-ui.mjs?v=032';
-const style=document.createElement('link');style.rel='stylesheet';style.href='/launch.css?v=032';document.head.append(style);
+import {UI_VERSION} from './study-ui.mjs?v=040';
+const style=document.createElement('link');style.rel='stylesheet';style.href='/launch.css?v=040';document.head.append(style);
 const info=document.getElementById('runtimeInfo');
 const warning=document.getElementById('versionWarning');
 const workspace=document.querySelector('.workspace');
@@ -25,7 +25,7 @@ try {
   document.getElementById('runtimeText').textContent=`버전: ${data.version}\n앱 폴더: ${data.app_dir}\n데이터 폴더: ${data.data_dir}\n포트: ${data.port}\n프로세스: ${data.pid}\n실행 ID: ${data.instance}`;
   info.querySelector('summary').textContent=`실행 확인 v${data.version}`;
   window.AOALaunchState={verified:true,...data};
-  await import('./app.mjs?v=032');
+  await import('./app.mjs?v=040');
   workspace.inert=false;
 } catch(error) {
   warning.hidden=false;warning.textContent='실행 중단: '+error.message;

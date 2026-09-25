@@ -4,6 +4,7 @@ import {firstEvent,knownEvents,completedOrder,visibleStudyEvents,episodeRange,ne
 import {studyMarkers} from './study-markers.mjs';
 import {renderStudy,UI_VERSION} from './study-ui.mjs';
 import {renderOutcome,outcomeAvailable,returnText,finalResultMarker} from './pnl-ui.mjs';
+import {renderSizing,seedLabel,seedReturnText} from './seed-ui.mjs';
 const $=id=>document.getElementById(id);
 const S={token:'',episodes:[],episode:null,events:[],bars:[],visible:[],tf:'5m',loadedTf:null,zone:'UTC',start:0,end:0,anchor:null,selected:null,cutoff:null,replayIndex:-1,request:0,listRequest:0,viewRequest:0,markerGroups:[],timer:null,playing:false,playEpoch:0,loading:false,uploading:false,downloading:false,jobId:null,coverage:null,performance:null,attempts:new Set(),autoBlocked:false,noteDirty:false,hover:null,study:null,studySerial:0,studyKey:null};
 let chart,candles,volume,markerApi,aborter,toastTimer,priceLines=[];
@@ -38,7 +39,10 @@ function allowedEvents(){return visibleStudyEvents(S.events,{minQty:Math.max(0,N
 function updateZone(){chart.applyOptions({localization:{timeFormatter:t=>date(t,true)}});chart.timeScale().applyOptions({tickMarkFormatter:(t,type)=>{const d=date(t,true);return S.tf==='1d'||[0,1,2].includes(type)?d.slice(5,10):d.slice(11,16);}});}
 function renderReferences(){for(const x of priceLines)candles.removePriceLine(x);priceLines=[];if(S.cutoff!=null||!$('referenceLines').checked)return;const e=S.events.find(e=>e.id===S.selected);if(!e)return;for(const [p,title,color] of [[e.price,'BitMEX 체결 (대체시장과 다름)','#c98916'],[e.basis_before,'BitMEX 직전 평균단가','#718297']])if(Number.isFinite(p)&&p>0)priceLines.push(candles.createPriceLine({price:p,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title}));}
 function renderMarkers(){
-  const selected=allowedEvents();const out=studyMarkers(selected,S.visible,S.tf,{legacy:$('legacy').checked,cutoff:S.cutoff,selected:S.selected,endpoint:$('endpoint').value,allEvents:S.events});const resultMark=finalResultMarker(S.performance,S.visible,S.tf,S.cutoff);if(resultMark)out.markers.push(resultMark);out.markers.sort((a,b)=>a.time-b.time);markerApi.setMarkers(out.markers);S.markerGroups=out.groups;
+  const selected=allowedEvents();const out=studyMarkers(selected,S.visible,S.tf,{legacy:$('legacy').checked,cutoff:S.cutoff,selected:S.selected,endpoint:$('endpoint').value,allEvents:S.events});const selectedEvent=S.events.find(e=>e.id===S.selected);
+  const sl=seedLabel(selectedEvent,S.cutoff,$('seedMode')?.value||'initial');
+  if(sl){const gi=out.groups.findIndex(g=>g.items.some(e=>e.id===S.selected));const mark=out.markers.find(m=>m.id==='g'+gi);if(mark)mark.text+=' · '+(out.groups[gi].items.length>1?'선택 주문 ':'')+sl;}
+  const resultMark=finalResultMarker(S.performance,S.visible,S.tf,S.cutoff);if(resultMark)out.markers.push(resultMark);out.markers.sort((a,b)=>a.time-b.time);markerApi.setMarkers(out.markers);S.markerGroups=out.groups;
   const missing=S.visible.filter(b=>!isBar(b)).length,d=markerDiagnostics(selected,S.visible,S.tf,S.cutoff);
   $('coverage').textContent=`${S.visible.filter(isBar).length.toLocaleString()}개 완성 ${S.tf}봉 · 누락/불완전 ${missing.toLocaleString()}봉 · 원본 보간 없음${out.truncated?' · 마커 '+out.truncated+'개 생략':''}${S.cutoff!=null?(outcomeAvailable(S.performance,S.cutoff)?' · 복기: 종료 포지션 성과 공개':' · 복기: 미래 봉·최종 성과 숨김'):''}`;
   $('markerStatus').textContent=`차트 대상 ${selected.length}주문 · 화면 밖 ${d.outside} · 누락 봉 ${d.gap} · 필터 제외 ${knownEvents(S.events,S.cutoff).length-selected.length}. 첫 진입·마지막 관측 감량·선택 주문은 수량 필터 보호.`;
@@ -54,7 +58,7 @@ function clearView(){S.viewRequest++;S.request++;S.studySerial++;aborter?.abort(
 async function loadEpisodes(reselect=false){const serial=++S.listRequest;const p=new URLSearchParams({symbol:$('symbol').value,year:$('year').value,year_mode:$('carry').checked?'overlap':'entry',direction:$('direction').value,result:S.cutoff==null?$('result').value:'',search:$('search').value});const rows=await api('episodes?'+p);if(serial!==S.listRequest)return;S.episodes=rows;renderEpisodes();if(reselect){if(rows.length)await selectEpisode(rows[0]);else clearView();}}
 function renderEpisodes(){
   $('episodeCount').textContent=S.episodes.length.toLocaleString();$('episodeList').replaceChildren();if(!S.episodes.length)$('episodeList').append(node('p','조건에 맞는 포지션이 없습니다.','hint'));
-  for(const ep of S.episodes){const b=node('button',null,'episode-item'+(S.episode?.id===ep.id?' selected':''));b.dataset.episode=ep.id;const r=node('div',null,'row');r.append(node('strong','#'+ep.id),node('span',(ep.carried?'이월 · ':'')+(ep.direction||'미확보'),'badge '+(ep.direction||'').toLowerCase()));b.append(r,node('small',date(ep.start,true)+(S.cutoff==null?' · '+ep.count+'주문':'')));if(S.cutoff==null&&ep.pnl_btc!=null)b.append(node('small',`${ep.pnl_btc>0?'+':''}${ep.pnl_btc.toFixed(3)} BTC`,ep.pnl_btc>=0?'positive':'negative'));if(S.cutoff==null&&(ep.net_return_pct!=null||ep.net_return_estimate_pct!=null))b.append(node('small',returnText(ep)+(ep.net_return_pct==null?' · 참고':' · 순손익률'),'episode-return'));b.onclick=()=>selectEpisode(ep).catch(error);$('episodeList').append(b);}
+  for(const ep of S.episodes){const b=node('button',null,'episode-item'+(S.episode?.id===ep.id?' selected':''));b.dataset.episode=ep.id;const r=node('div',null,'row');r.append(node('strong','#'+ep.id),node('span',(ep.carried?'이월 · ':'')+(ep.direction||'미확보'),'badge '+(ep.direction||'').toLowerCase()));b.append(r,node('small',date(ep.start,true)+(S.cutoff==null?' · '+ep.count+'주문':'')));if(S.cutoff==null&&ep.pnl_btc!=null)b.append(node('small',`${ep.pnl_btc>0?'+':''}${ep.pnl_btc.toFixed(3)} BTC`,ep.pnl_btc>=0?'positive':'negative'));if(S.cutoff==null&&(ep.net_return_pct!=null||ep.net_return_estimate_pct!=null))b.append(node('small',returnText(ep)+(ep.net_return_pct==null?' · 참고':' · 순손익률'),'episode-return'));if(S.cutoff==null&&ep.seed_return_pct!=null)b.append(node('small','초기 시드 '+seedReturnText(ep),'seed-return'));b.onclick=()=>selectEpisode(ep).catch(error);$('episodeList').append(b);}
 }
 function renderStats(){
   $('positionOutcome').hidden=!S.episode;if(S.episode)renderOutcome($('positionOutcome'),S.performance,S.cutoff,()=>{$('importDialog').showModal();});
@@ -97,10 +101,11 @@ async function repairWindow(manual=true,contextOnly=false){
 function renderEvents(){
   const known=knownEvents(S.events,S.cutoff),allowed=new Set(allowedEvents().map(e=>e.id));$('eventCount').textContent=S.cutoff==null?`${known.length}주문 · 차트 ${allowed.size}`:`현재까지 ${known.length}주문`;$('eventList').replaceChildren();
   for(const e of known){const a=safeAction(e,S.cutoff),b=node('button',null,'event-item'+(e.id===S.selected?' selected':'')+(!allowed.has(e.id)?' filtered':''));b.dataset.event=e.id;const top=node('div',null,'event-top');top.append(node('strong',`${dirLabel(e.direction)} ${ACTIONS[a]?.label||a}`),node('span',completedOrder(e,S.cutoff)?fmtQty(e.qty):'분할체결 중'));
-    b.append(top,node('span',`${date(eventTime(e),true)} ${S.zone}${e.first_price?' · $'+money(e.first_price):''}${!allowed.has(e.id)?' · 차트 필터 제외':''}`,'event-sub'));b.onclick=()=>selectEvent(e).catch(error);$('eventList').append(b);}
+    b.append(top,node('span',`${date(eventTime(e),true)} ${S.zone}${e.first_price?' · $'+money(e.first_price):''}${!allowed.has(e.id)?' · 차트 필터 제외':''}`,'event-sub'));const sl=seedLabel(e,S.cutoff,$('seedMode')?.value||'initial');if(sl)b.append(node('small',sl,'seed-note'));b.onclick=()=>selectEvent(e).catch(error);$('eventList').append(b);}
 }
 function detailRow(k,v){const r=node('div',null,'detail-row');r.append(node('span',k),node('span',v));return r;}
 function drawDetail(e){
+  if($('seedPanel'))renderSizing($('seedPanel'),e,S.cutoff,$('seedMode')?.value||'initial',()=>$('importDialog').showModal());
   const root=$('eventDetail');root.replaceChildren();if(!e){root.append(node('p','주문을 클릭하면 해당 봉으로 이동합니다.','hint'));return;}
   root.append(node('h3',`${dirLabel(e.direction)} · ${e.role==='Entry'?'진입/추가':'감량/종료'}`),detailRow('첫 체결',date(e.time,true)+' '+S.zone),detailRow('첫 체결가',money(e.first_price)),detailRow('첫 체결 전 보유',fmtQty(e.position_before)),detailRow('첫 체결 전 평균단가',money(e.basis_before)));
   if(completedOrder(e,S.cutoff)){for(const [k,v] of [['마지막 체결',e.last_observed?date(e.end_time,true):'미확보'],['주문 총수량',fmtQty(e.qty)],['산술평균',money(e.avg_price)],['역수가중평균',money(e.inverse_price)],['종료 후 보유',fmtQty(e.position_after)],['스톱 발동가격',e.stop_trigger?money(e.stop_trigger):'미기록'],['주문유형',e.order_type||'미확보']])root.append(detailRow(k,v));}
@@ -155,7 +160,18 @@ async function importFiles(fileList){
 async function capture(){if(!S.visible.some(isBar))return toast('실제 캔들이 없습니다.');const source=chart.takeScreenshot(true,false),canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height+80;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#17263a';ctx.font='bold 14px sans-serif';ctx.fillText($('chartTitle').textContent+' · '+S.zone+(S.cutoff!=null?' · REPLAY '+date(S.cutoff):''),14,25);ctx.drawImage(source,0,40);ctx.font='10px sans-serif';ctx.fillText('Binance spot proxy / BitMEX recorded orders / assumed UTC / no interpolation / research hypotheses only',14,canvas.height-14);canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=`AOA_${S.episode.id}_${S.tf}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
 async function changeFilters(){S.viewRequest++;S.request++;aborter?.abort();stopPlaying();resetReplay();await loadEpisodes(true);}
 function setTF(tf){S.tf=tf;for(const b of $('tfButtons').children)b.classList.toggle('active',b.dataset.tf===tf);updateZone();}
+function initSeedControls(){
+ const style=document.createElement('link');style.rel='stylesheet';style.href='/seed.css?v=040';document.head.append(style);
+ const controls=node('div',null,'seed-mode');controls.append(node('label','주문 비중 기준'));
+ const select=node('select');select.id='seedMode';
+ for(const [value,text] of [['initial','최초 진입 시드 고정'],['current','각 주문 직전 시드']]){const o=node('option',text);o.value=value;select.append(o);}
+ select.value=preference('aoa.seedMode','initial');if(!select.value)select.value='initial';controls.append(select);
+ const connect=node('button','잔고 연결','small');connect.id='seedImport';connect.onclick=()=>$('importDialog').showModal();controls.append(connect);$('positionOutcome').after(controls);
+ const panel=node('section');panel.id='seedPanel';$('eventDetail').after(panel);
+ select.onchange=()=>{savePreference('aoa.seedMode',select.value);renderEvents();drawDetail(S.events.find(e=>e.id===S.selected));renderMarkers();};
+}
 function bind(){
+ initSeedControls();
   $('autoFill').checked=preference('aoa.autoFill','1')==='1';
   for(const id of ['importOpen','emptyImport'])$(id).onclick=()=>$('importDialog').showModal();$('closeImport').onclick=()=>$('importDialog').close();$('closeQuality').onclick=()=>$('qualityDialog').close();
   $('qualityOpen').onclick=async()=>{try{$('qualityContent').textContent=JSON.stringify({status:await api('status'),current_range:S.coverage,markers:markerDiagnostics(allowedEvents(),S.visible,S.tf,S.cutoff),study:S.study,issues:await api('issues')},(k,v)=>k==='token'?undefined:v,2);$('qualityDialog').showModal();}catch(e){error(e);}};

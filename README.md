@@ -1,3 +1,7 @@
+# v0.4.0 · 시드 비중 추가
+
+[업데이트·잔고 연결·계산 한계](docs/RELEASE_v0.4.0.md)
+
 # AOA Whale Viewer v0.3.2
 
 실제 고래 주문을 캔들·거래량 위에 표시하고, 대응 근거와 포지션 최종 성과를 복기하는 로컬 연구 앱입니다. 차트 엔진은 TradingView 공식 Lightweight Charts이며 TradingView.com 사이트 자체가 아닙니다.

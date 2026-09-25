@@ -1,6 +1,7 @@
 // Descriptive net performance. No assumed leverage or proxy-market PNL.
 import {pct} from './review-core.mjs';
 import {TF,bucket} from './core.mjs';
+import {seedReturnText,seedBasis} from './seed-ui.mjs';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 const btc=n=>n==null?'미연결':(n>0?'+':'')+Number(n).toLocaleString('en-US',{minimumFractionDigits:6,maximumFractionDigits:8})+' BTC';
 export function outcomeAvailable(p,cutoff=null){return !!p&&(cutoff==null||(p.position_closed&&p.closed_at_us!=null&&p.closed_at_us<cutoff*1e6));}
@@ -10,6 +11,14 @@ export function renderOutcome(root,p,cutoff,onImport){
  if(!p){root.append(el('span','포지션 손익 계산 중…'));return;}
  if(!outcomeAvailable(p,cutoff)){root.append(el('strong','복기 중 · 최종 순손익은 청산 후 공개'),el('p','이 포지션의 마지막 체결이 완료되면 수수료·펀딩을 반영한 결과가 표시됩니다.','hint'));return;}
  root.append(el('h3','포지션 최종 결과'));
+ const seedBox=el('div',null,'seed-outcome');
+ seedBox.append(el('small','초기 시드 대비 손익 기여도'),el('strong',seedReturnText(p),p.seed_return_pct>0?'positive':p.seed_return_pct<0?'negative':''));
+ seedBox.append(el('small',seedBasis(p.seed_initial)),el('small',p.seed_initial?.btc==null?(p.seed_initial?.reason||'잔고 원본 연결 필요'):'초기 시드 ≈ '+Number(p.seed_initial.btc).toFixed(8)+' BTC'));
+ seedBox.append(el('small',p.seed_return_note||'계좌 전체 수익률·실제 투입 증거금 ROI가 아닙니다.'));
+ if(p.seed_return_pct==null){const b=el('button','잔고자료 연결','small');b.onclick=onImport;seedBox.append(b);}
+ if(p.seed_first_order_pct!=null)seedBox.append(el('small','최초 주문 규모/시드 ≈ '+pct(p.seed_first_order_pct,2)));
+ if(p.seed_peak_observed_pct!=null)seedBox.append(el('small','관측 끝점 최대 보유/초기 시드 ≈ '+pct(p.seed_peak_observed_pct,2)));
+ root.append(seedBox);
  const exact=p.net_return_pct!=null,value=exact?p.net_return_pct:p.net_return_estimate_pct;
  root.append(el('small',exact?'순손익률 · 누적 진입 계약가치 기준':value!=null?'참고 순손익률 · 분모 근사/전체성 미검증':'순손익률 · 누적 진입 계약가치 기준'));
  root.append(el('div',returnText(p),'outcome-return '+(value>0?'positive':value<0?'negative':'')));
@@ -30,5 +39,5 @@ export function finalResultMarker(p,bars,tf,cutoff){
  if(!outcomeAvailable(p,cutoff)||!p.position_closed||p.net_pnl_btc==null||p.closed_at_us==null)return null;
  const t=bucket(Math.floor(p.closed_at_us/1e6),tf);
  if(!bars.some(b=>b.time===t&&b.open!=null))return null;
- return {time:t,position:'belowBar',shape:'circle',color:p.net_pnl_btc>=0?'#087f72':'#c82b41',text:'최종 '+(p.net_return_pct!=null||p.net_return_estimate_pct!=null?returnText(p)+' · ':'')+btc(p.net_pnl_btc)};
+ return {time:t,position:'belowBar',shape:'circle',color:p.net_pnl_btc>=0?'#087f72':'#c82b41',text:'최종 '+(p.net_return_pct!=null||p.net_return_estimate_pct!=null?returnText(p)+' · ':'')+btc(p.net_pnl_btc)+(p.seed_return_pct!=null?' · 초기 시드 '+seedReturnText(p):'')};
 }
