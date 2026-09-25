@@ -18,6 +18,7 @@ export function renderOutcome(root,p,cutoff,onImport){
  if(p.seed_return_pct==null){const b=el('button','잔고자료 연결','small');b.onclick=onImport;seedBox.append(b);}
  if(p.seed_first_order_pct!=null)seedBox.append(el('small','최초 주문 규모/시드 ≈ '+pct(p.seed_first_order_pct,2)));
  if(p.seed_peak_observed_pct!=null)seedBox.append(el('small','관측 끝점 최대 보유/초기 시드 ≈ '+pct(p.seed_peak_observed_pct,2)));
+ if(p.seed_initial?.basis==='prior_day_ledger_close')seedBox.append(el('p',p.seed_initial.reason,'warning'));
  root.append(seedBox);
  const exact=p.net_return_pct!=null,value=exact?p.net_return_pct:p.net_return_estimate_pct;
  root.append(el('small',exact?'순손익률 · 누적 진입 계약가치 기준':value!=null?'참고 순손익률 · 분모 근사/전체성 미검증':'순손익률 · 누적 진입 계약가치 기준'));

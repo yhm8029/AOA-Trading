@@ -10,8 +10,9 @@ import re
 from collections import defaultdict
 from .model import time_us,number
 from .performance_ledger import PnlStore,finite,same
+from .wallet_daily import DAILY_SCHEMA, DailyBook, parse_stamp, parse_snapshot
 
-VERSION='seed-1'
+VERSION='seed-2-daily'
 DAY_US=86_400_000_000
 MAX_AGE_US=36*3_600_000_000
 SCHEMA='''
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS seed_blocks (
 CREATE TABLE IF NOT EXISTS seed_imports (
  digest TEXT NOT NULL, parser TEXT NOT NULL, report TEXT NOT NULL,
  PRIMARY KEY(digest,parser));
-'''
+''' + DAILY_SCHEMA
 def norm(key):return re.sub(r'[\s_\-()\[\]]','',str(key).lstrip('\ufeff')).lower()
 def normalized(row):return {norm(k):v for k,v in row.items() if k is not None}
 def field(row,*keys):
@@ -39,44 +40,12 @@ def field(row,*keys):
 def recognizes(headers):
     return bool({norm(x) for x in headers} & {'walletbalance','walletbalancebtc','walletbtc','equitybtc','equityestimatebtc','marginbalancebtc','지갑잔고btc','순자산btc'})
 
-def parse_stamp(text):
-    text=str(text).strip()
-    if re.fullmatch(r'\d{4}-\d{2}-\d{2}D',text):text=text[:-1]
-    date_only=bool(re.fullmatch(r'\d{4}[-/]\d{2}[-/]\d{2}',text))
-    text=text.replace('/','-')
-    if len(text)>10 and text[10]=='D':text=text[:10]+'T'+text[11:]
-    return time_us(text),'date_only' if date_only else 'timestamp'
-
-def parse_snapshot(raw):
-    r=normalized(raw);status=(field(r,'transactstatus','status') or '').lower()
-    if status in {'canceled','cancelled','rejected','pending','unconfirmed','failed','new'}:return None
-    if status and status not in {'completed','complete','confirmed','success','succeeded','done'}:raise ValueError('확인되지 않은 잔고 거래 상태: '+status)
-    stamp=field(r,'timestamp','asofutc','asof','transacttime','datetime','time','date','시각','날짜')
-    if not stamp:raise ValueError('잔고 시각 열 미확인')
-    t,precision=parse_stamp(stamp);account=field(r,'account','accountid','accountkey') or 'default'
-    kind=(field(r,'transacttype','type') or '').lower()
-    wallet=field(r,'walletbalancebtc','walletbtc','지갑잔고btc')
-    equity=field(r,'equitybtc','marginbalancebtc','순자산btc','equityestimatebtc')
-    quality='provided_equity_estimate' if field(r,'equityestimatebtc') else 'provided_snapshot'
-    if wallet is not None:wallet=number(wallet)
-    if equity is not None:equity=number(equity)
-    if wallet is None and field(r,'walletbalance') is not None:
-        currency=field(r,'currency');unit=(field(r,'unit','balanceunit') or '').lower()
-        if currency=='XBt' or unit in {'xbt_satoshi','satoshi','sat','sats'}:scale=100_000_000
-        elif currency in {'BTC','XBT'} or unit in {'btc','bitcoin'}:scale=1
-        else:raise ValueError('walletBalance 단위 미확인: currency=XBt(사토시) / BTC 또는 wallet_balance_btc 필요')
-        wallet=number(field(r,'walletbalance'))/scale
-    if wallet is None and equity is None:
-        if precision=='date_only' and kind in {'deposit','withdrawal','transfer'}:return {'block':t//DAY_US,'account':account,'reason':'입출금 시각이 날짜까지만 있음'}
-        return None
-    if precision=='date_only':return {'block':t//DAY_US,'account':account,'reason':'날짜만 있는 잔고/입출금: 장중 선후관계 미확인'}
-    key=field(r,'transactid','snapshotid','id') or '|'.join(map(str,(t,wallet,equity,account)))
-    return {'t':t,'wallet_btc':wallet,'equity_btc':equity,'account':account,'precision':precision,'quality':quality,'row_key':key}
-
 class SeedBook:
-    def __init__(self,rows=(),blocks=()):
+    def __init__(self,rows=(),blocks=(),daily=()):
         self.rows=[dict(r) for r in rows];self.blocks=[dict(b) for b in blocks]
-        self.accounts={r['account'] for r in self.rows}|{b['account'] for b in self.blocks}
+        self.daily=DailyBook(daily)
+        self.has_data=bool(self.rows or self.blocks or self.daily.rows)
+        self.accounts={r['account'] for r in self.rows}|{b['account'] for b in self.blocks}|self.daily.accounts
         self.by_kind={};self.times={}
         for kind in ('equity','wallet'):
             grouped=defaultdict(list)
@@ -88,24 +57,34 @@ class SeedBook:
                 result.append({'time_us':t,'btc':None if conflict else values[0],'conflict':conflict,'sources':sorted({r['source'] for r in rr}),'source_quality':sorted({r['quality'] for r in rr})})
             self.by_kind[kind]=result;self.times[kind]=[r['time_us'] for r in result]
     def at(self,t,kind=None):
-        result={'btc':None,'kind':kind,'time_us':None,'age_seconds':None,'quality':'unavailable','reason':'잔고 자료를 연결하세요.','sources':[]}
+        result={'btc':None,'kind':kind,'time_us':None,'age_seconds':None,'quality':'unavailable','reason':'잔고 자료를 연결하세요.','sources':[],'has_data':self.has_data}
         if len(self.accounts)>1:
             result['reason']='서로 다른 계좌의 잔고가 섞여 있습니다. 합산하거나 임의 계좌를 선택하지 않습니다.';return result
         for k in ((kind,) if kind else ('equity','wallet')):
             i=bisect.bisect_left(self.times[k],t)-1
-            if i<0:continue
-            s=self.by_kind[k][i];result.update(s,kind=k,age_seconds=(t-s['time_us'])/1e6)
-            if s['conflict']:
+            # Keep day-level and true timestamp observations separate. A day boundary
+            # is availability metadata, NOT an invented transaction timestamp.
+            daily=self.daily.at(t,self.blocks) if k=='wallet' and self.daily.rows else None
+            if daily and daily.get('available_from_us') is not None:
+                if i<0 or daily['available_from_us']>self.by_kind[k][i]['time_us']:
+                    daily['has_data']=True
+                    return daily
+            if i<0:
+                if daily:result.update(daily,has_data=True)
+                continue
+            point=self.by_kind[k][i];result.update(point,kind=k,age_seconds=(t-point['time_us'])/1e6)
+            if point['conflict']:
                 result.update(btc=None,reason='동일 시각 잔고값 충돌. 이전 잔고로 우회하지 않습니다.');return result
-            if t-s['time_us']>MAX_AGE_US:
+            if t-point['time_us']>MAX_AGE_US:
                 result.update(btc=None,reason='직전 잔고가 36시간보다 오래되어 주문 시드 계산을 보류합니다.');return result
-            if any(b['day']<=t//DAY_US and (b['day']+1)*DAY_US>s['time_us'] for b in self.blocks):
+            if any(b['day']<=t//DAY_US and (b['day']+1)*DAY_US>point['time_us'] for b in self.blocks):
                 result.update(btc=None,reason='시각 불명 잔고/입출금 이후 확정 시각 잔고가 아직 없습니다.');return result
-            if not finite(s['btc']) or s['btc']<=0:
+            if not finite(point['btc']) or point['btc']<=0:
                 result.update(btc=None,reason='양수 시드가 확인되지 않습니다.');return result
             result.update(quality='historical_reference',reason=('명시적 순자산 관측값을 주문 직전까지 유지한 참고값' if k=='equity' else '지갑잔고 관측값 기준 참고. 미실현손익 제외; 순자산/투입 증거금이 아님'))
             return result
-        if self.rows:result['reason']='주문보다 앞선 같은 기준의 잔고가 없습니다. 미래 잔고를 사용하지 않습니다.'
+        if self.has_data and result['reason']=='잔고 자료를 연결하세요.':
+            result['reason']='잔고 자료는 연결됐지만 주문보다 앞선 사용 가능한 기준이 없습니다.'
         return result
 
 def order_value(e):
@@ -153,15 +132,15 @@ class SeedStore(PnlStore):
     def seed_book(self):
         if self._seed_book is None:
             with self.connect() as db:
-                rows=db.execute('SELECT * FROM seed_snapshots').fetchall();blocks=db.execute('SELECT * FROM seed_blocks').fetchall()
-            self._seed_book=SeedBook(rows,blocks)
+                rows=db.execute('SELECT * FROM seed_snapshots').fetchall();blocks=db.execute('SELECT * FROM seed_blocks').fetchall();daily=db.execute('SELECT * FROM seed_daily_rows').fetchall()
+            self._seed_book=SeedBook(rows,blocks,daily)
         return self._seed_book
     def initial_seed(self,events):
         entries=[e for e in events if e.get('role')=='Entry']
-        if not entries:return {'btc':None,'kind':None,'reason':'최초 진입 미확인','sources':[]}
+        if not entries:return {'btc':None,'kind':None,'reason':'최초 진입 미확인','sources':[],'has_data':self.seed_book().has_data}
         first=min(entries,key=lambda e:e['first_us'])
         if not first.get('first_observed') or first.get('position_before') not in (None,0):
-            return {'btc':None,'kind':None,'reason':'관측 최초 주문 이전 보유량 존재/첫 끝점 미확인. 최초 시드로 단정하지 않음','sources':[]}
+            return {'btc':None,'kind':None,'reason':'관측 최초 주문 이전 보유량 존재/첫 끝점 미확인. 최초 시드로 단정하지 않음','sources':[],'has_data':self.seed_book().has_data}
         s=self.seed_book().at(first['first_us']);s['anchor_us']=first['first_us']
         s['anchor_status']='first_observed_entry' if first.get('position_before') is None else 'flat_to_position'
         return s
@@ -191,10 +170,16 @@ class SeedStore(PnlStore):
             e=first.get(r['id']);s=self.initial_seed([e]) if e else None
             r['seed_return_pct']=ratio(r.get('pnl_btc'),s) if r.get('closed') or r['id'] in declared else None
             r['seed_kind']=s.get('kind') if s else None
+            r['seed_basis']=s.get('basis') if s else None
         return rows
     def status(self):
         s=super().status()
         with self.connect() as db:
             s['seed_snapshots']=db.execute('SELECT COUNT(*) FROM seed_snapshots').fetchone()[0]
             s['seed_ambiguous_days']=db.execute('SELECT COUNT(DISTINCT day) FROM seed_blocks').fetchone()[0]
+        book=self.seed_book()
+        s['seed_daily_rows']=len(book.daily.rows)
+        s['seed_daily_days']=len(book.daily.points)
+        s['seed_daily_verified_days']=sum(p['valid'] for p in book.daily.points)
+        s['seed_data_connected']=book.has_data
         return s
